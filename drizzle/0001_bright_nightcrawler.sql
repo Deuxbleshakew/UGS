@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `member_manager` ON `members` (`tournament_id`,`manager_id`);

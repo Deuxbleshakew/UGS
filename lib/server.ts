@@ -1,0 +1,278 @@
+import { store, proofStore } from "./storage";
+import { getCurrentUser, sameOrigin, managerInvitation, type CurrentUser } from "./auth";
+import seed from "@/data/draw-config.json";
+import { configSchema, reportSchema, validateMatchReport, warnings, standings, managerRows, playerRows, awards, csv, type Config, type Fixture } from "./domain";
+import { z } from "zod";
+
+type Member={id:string;tournament_id:string;user_id:string|null;email:string;name:string;role:string;manager_id:string|null};
+type Tournament={id:string;name:string;owner_id:string;config:string;created_at:string;awards:string|null;locked_at:string|null;revision:number};
+class HttpError extends Error {constructor(public status:number,message:string){super(message);}}
+function fail(message:string,status=400):never{throw new HttpError(status,message);}
+const id=()=>crypto.randomUUID(),now=()=>new Date().toISOString();
+function db(){return store;}
+const query=(sql:string,...args:unknown[])=>db().prepare(sql).bind(...args);
+async function all<T>(sql:string,...args:unknown[]){return (await query(sql,...args).all<T>()).results;}
+function unpack(row:Record<string,unknown>):Fixture{return {...row,report:row.report?JSON.parse(String(row.report)):null} as Fixture;}
+async function getFixtures(tid:string){return (await all<Record<string,unknown>>("SELECT * FROM fixtures WHERE tournament_id=? ORDER BY matchday,scheduled,id",tid)).map(unpack);}
+async function membership(user:CurrentUser,tid:string){
+  const m=await query("SELECT * FROM members WHERE tournament_id=? AND user_id=?",tid,user.userId).first<Member>();
+  if(!m)fail("You do not have access to this tournament.",403);return m;
+}
+const admin=(m:Member)=>{if(m.role!=="admin")fail("Only the organizer can do that.",403);};
+function participant(m:Member,f:Fixture,c:Config){return m.role==="admin"||c.clubs.some(club=>[f.home,f.away].includes(club.id)&&club.manager===m.manager_id);}
+function requireParticipant(m:Member,f:Fixture,c:Config){if(!participant(m,f,c))fail("This match belongs to other managers.",403);}
+function auditInsert(tid:string,user:CurrentUser,action:string,reason:string,before:unknown,after:unknown,fixture:string|null=null){
+  return query('INSERT INTO audit(id,tournament_id,fixture_id,actor_id,actor_name,at,action,reason,"before","after") VALUES(?,?,?,?,?,?,?,?,?,?)',id(),tid,fixture,user.userId,user.displayName,now(),action,reason,JSON.stringify(before),JSON.stringify(after));
+}
+async function bytes(request:Request,limit:number){
+  const reader=request.body?.getReader();if(!reader)return new Uint8Array();const chunks:Uint8Array[]=[];let length=0;
+  for(;;){const {done,value}=await reader.read();if(done)break;length+=value.byteLength;if(length>limit){await reader.cancel();fail("File/request is too large.",413);}chunks.push(value);}
+  const result=new Uint8Array(length);let offset=0;for(const chunk of chunks){result.set(chunk,offset);offset+=chunk.length;}return result;
+}
+async function body(request:Request){try{return JSON.parse(new TextDecoder().decode(await bytes(request,2*1024*1024)));}catch(e){if(e instanceof HttpError)throw e;fail("Send a valid JSON file.");}}
+function json(data:unknown,status=200){return Response.json(data,{status,headers:{"Cache-Control":"no-store"}});}
+function checkReport(report:Parameters<typeof validateMatchReport>[0],fixture:Fixture){try{validateMatchReport(report,fixture);}catch(e){fail((e as Error).message);}}
+
+async function changeFixture(t:Tournament,m:Member,user:CurrentUser,f:Fixture,data:Record<string,unknown>){
+  const c=configSchema.parse(JSON.parse(t.config));requireParticipant(m,f,c);
+  if(data.version!==f.version)fail("This match changed. Refresh it before saving.",409);
+  const action=String(data.action??""),reason=String(data.reason??"").trim().slice(0,2000);
+  let status=f.status,report=f.report,note=f.note,submittedBy=f.submitted_by,submittedManager=f.submitted_manager,submittedAt=f.submitted_at,finalizedAt=f.finalized_at;
+  if(action==="submit"||action==="edit"){
+    if(action==="submit"&&!['scheduled','correction'].includes(f.status))fail("This report is already under review.",409);
+    if(action==="edit"){admin(m);if(!reason)fail("Explain why you are editing this report.");if(f.status==="finalized")fail("Finalized reports cannot be edited in this first version.");}
+    report=reportSchema.parse(data.report);checkReport(report,f);
+    const proof=await query("SELECT id FROM proofs WHERE fixture_id=? AND category='final-score' LIMIT 1",f.id).first();
+    if(!proof)fail("Upload a final-score screenshot before submitting.");
+    status="pending";note=action==="edit"?reason:null;submittedBy=user.userId;submittedAt=now();
+    const h=c.clubs.find(cl=>cl.id===f.home)?.manager,a=c.clubs.find(cl=>cl.id===f.away)?.manager;
+    submittedManager=m.manager_id&&[h,a].includes(m.manager_id)?m.manager_id:h??null;
+  }else if(action==="confirm"||action==="dispute"){
+    if(f.status!=="pending")fail("This match is not awaiting opponent confirmation.",409);
+    const h=c.clubs.find(cl=>cl.id===f.home)?.manager,a=c.clubs.find(cl=>cl.id===f.away)?.manager;
+    if(user.userId===f.submitted_by||!m.manager_id||![h,a].includes(m.manager_id)||m.manager_id===f.submitted_manager)fail("Only the opposing manager can confirm or dispute this report.",403);
+    if(action==="dispute"&&!reason)fail("Add a reason so the organizer can resolve the dispute.");
+    status=action==="confirm"?"confirmed":"disputed";note=reason||"Opponent confirmed the report.";
+  }else if(action==="correction"){
+    admin(m);if(!reason)fail("Explain what needs correcting.");if(!['pending','confirmed','disputed'].includes(f.status))fail("Only a submitted report can be returned for correction.");status="correction";note=reason;
+  }else if(action==="finalize"){
+    admin(m);if(t.locked_at)fail("Unlock the awards before finalizing more results.");
+    if(!['pending','confirmed','disputed'].includes(f.status)||!report)fail("Submit a report before finalizing it.");
+    if((f.status!=="confirmed"||warnings(report,f).length)&&!reason)fail("Explain the override when the opponent has not confirmed or statistics are flagged.");
+    checkReport(report,f);status="finalized";finalizedAt=now();note=reason||"Organizer approved the confirmed result.";
+  }else fail("Unknown review action.");
+  const operation=id(),after={...f,status,report,note,submitted_by:submittedBy,submitted_manager:submittedManager,submitted_at:submittedAt,finalized_at:finalizedAt,version:f.version+1};
+  const changed=await db().batch([
+    query("UPDATE fixtures SET status=?,report=?,note=?,submitted_by=?,submitted_manager=?,submitted_at=?,finalized_at=?,version=version+1,mutation=? WHERE id=? AND version=? AND EXISTS(SELECT 1 FROM proofs WHERE fixture_id=? AND category='final-score') AND (?<>'finalize' OR EXISTS(SELECT 1 FROM tournaments WHERE id=? AND locked_at IS NULL))",status,JSON.stringify(report),note,submittedBy,submittedManager,submittedAt,finalizedAt,operation,f.id,f.version,f.id,action,t.id),
+    query('INSERT INTO audit(id,tournament_id,fixture_id,actor_id,actor_name,at,action,reason,"before","after") SELECT ?,?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM fixtures WHERE id=? AND mutation=?)',id(),t.id,f.id,user.userId,user.displayName,now(),action,reason||note||"Match report submitted.",JSON.stringify(f),JSON.stringify(after),f.id,operation),
+    query("UPDATE tournaments SET revision=revision+1 WHERE id=? AND EXISTS(SELECT 1 FROM fixtures WHERE id=? AND mutation=?)",t.id,f.id,operation),
+  ]);
+  if(changed[0].meta.changes!==1)fail("The record or proof changed while you were saving. Refresh and try again.",409);
+  return json({ok:true});
+}
+
+export async function handle(request:Request,path:string[]):Promise<Response>{
+  try{
+    const user=await getCurrentUser();if(!user)fail("Sign in to use your tournament workspace.",401);
+    if(request.method!=="GET"){
+      if(!sameOrigin(request))fail("Cross-origin changes are not allowed.",403);
+    }
+    // Email is used only to accept the organizer's explicit pending membership.
+    // Once accepted, authorization uses the stable, site-scoped user ID.
+    await query("UPDATE members SET user_id=? WHERE email=? AND user_id IS NULL",user.userId,user.email.toLowerCase()).run();
+    const url=new URL(request.url);
+    if(path[0]==="state"&&request.method==="GET"){
+      const choices=await all<{id:string;name:string;role:string}>("SELECT t.id,t.name,m.role FROM tournaments t JOIN members m ON m.tournament_id=t.id WHERE m.user_id=? ORDER BY t.created_at DESC",user.userId);
+      const tid=url.searchParams.get("tournament")??choices[0]?.id;
+      if(!tid)return json({user,tournaments:[],tournament:null,seed});
+      const member=await membership(user,tid),t=await query("SELECT * FROM tournaments WHERE id=?",tid).first<Tournament>();if(!t)fail("Tournament not found.",404);
+      const config=configSchema.parse(JSON.parse(t.config)),fixtures=await getFixtures(tid);
+      const visibleFixtures=fixtures.map(f=>f.status==="finalized"||participant(member,f,config)?f:{...f,report:null,note:null,submitted_by:null});
+      return json({user,tournaments:choices,tournament:{...t,config,awards:t.awards?JSON.parse(t.awards):null},member,fixtures:visibleFixtures,
+        members:member.role==="admin"?await all<Member>("SELECT * FROM members WHERE tournament_id=?",tid):[],
+        audit:member.role==="admin"?await all("SELECT * FROM audit WHERE tournament_id=? ORDER BY at DESC LIMIT 100",tid):[],
+      });
+    }
+    if(path[0]==="create"&&request.method==="POST"){
+      if(!user.isOwner)fail("Only the organizer can create tournaments.",403);
+      const data=await body(request),c=configSchema.parse(data.config??{...seed,name:data.name||seed.name});
+      const tid=id();await db().batch([
+        query("INSERT INTO tournaments(id,name,owner_id,config,created_at) VALUES(?,?,?,?,?)",tid,c.name,user.userId,JSON.stringify(c),now()),
+        query("INSERT INTO members(id,tournament_id,user_id,email,name,role,manager_id) VALUES(?,?,?,?,?,'admin',?)",id(),tid,user.userId,user.email.toLowerCase(),user.displayName,c.managers.find(m=>m.id==="max")?.id??null),
+        auditInsert(tid,user,"create","Tournament created.",null,{name:c.name,clubs:c.clubs.length}),
+      ]);return json({id:tid});
+    }
+    if(path[0]==="proof"&&path[1]){
+      const p=await query("SELECT * FROM proofs WHERE id=?",path[1]).first<{id:string;fixture_id:string;tournament_id:string;key:string;mime:string;uploader:string;category:string}>();if(!p)fail("Screenshot not found.",404);
+      const m=await membership(user,p.tournament_id),t=await query("SELECT * FROM tournaments WHERE id=?",p.tournament_id).first<Tournament>();
+      const raw=await query("SELECT * FROM fixtures WHERE id=?",p.fixture_id).first<Record<string,unknown>>();if(!t||!raw)fail("Match not found.",404);const f=unpack(raw);requireParticipant(m,f,JSON.parse(t.config));
+      if(request.method==="GET"){
+        const object=await proofStore.get(p.key);if(!object)fail("Screenshot unavailable.",404);
+        return new Response(object.body,{headers:{"Content-Type":p.mime,"Content-Disposition":"inline","X-Content-Type-Options":"nosniff","Cache-Control":"private, no-store","Content-Security-Policy":"default-src 'none'"}});
+      }
+      if(request.method==="DELETE"){
+        if(f.status==="finalized"||!['scheduled','correction'].includes(f.status))fail("Proof is preserved while a report is under review or finalized.");
+        if(p.uploader!==user.userId&&m.role!=="admin")fail("Only the uploader or organizer may remove this proof.",403);
+        const result=await db().batch([
+          query("DELETE FROM proofs WHERE id=? AND EXISTS(SELECT 1 FROM fixtures WHERE id=? AND status IN ('scheduled','correction'))",p.id,f.id),
+          query('INSERT INTO audit(id,tournament_id,fixture_id,actor_id,actor_name,at,action,reason,"before","after") SELECT ?,?,?,?,?,?,?,?,?,? WHERE changes()=1',id(),t.id,f.id,user.userId,user.displayName,now(),"remove-proof","Removed before submission/finalization.",JSON.stringify({proofId:p.id,category:p.category}),"null"),
+        ]);
+        if(result[0].meta.changes!==1)fail("The match changed. Refresh before removing proof.",409);
+        await proofStore.delete(p.key);return json({ok:true});
+      }
+    }
+    const tid=path[1];if(path[0]!=="tournament"||!tid)fail("Endpoint not found.",404);
+    const m=await membership(user,tid),t=await query("SELECT * FROM tournaments WHERE id=?",tid).first<Tournament>();if(!t)fail("Tournament not found.",404);
+    const c=configSchema.parse(JSON.parse(t.config));
+    if(path[2]==="export"&&request.method==="GET"){
+      const fs=await getFixtures(tid),kind=url.searchParams.get("kind")??"matches";
+      let rows:Record<string,unknown>[];
+      if(kind==="clubs")rows=standings(c,fs,"all");
+      else if(kind==="managers")rows=managerRows(c,fs);
+      else if(kind==="players")rows=playerRows(c,fs);
+      else if(kind==="awards")rows=(t.awards?JSON.parse(t.awards):awards(c,fs)).map((a:ReturnType<typeof awards>[number])=>({award:a.name,rule:a.rule,winners:a.leaders.map(l=>l.name).join("; "),value:a.leaders[0]?.value??"",lockedAt:t.locked_at}));
+      else if(kind==="audit"){admin(m);rows=await all('SELECT * FROM audit WHERE tournament_id=? ORDER BY at',tid);}
+      else if(kind==="proofs"){admin(m);rows=await all("SELECT id,fixture_id,uploader,uploaded_at,category,name,mime,size FROM proofs WHERE tournament_id=?",tid);}
+      else rows=fs.filter(f=>f.status==="finalized"&&f.report).map(f=>({fixture:f.id,home:c.clubs.find(cl=>cl.id===f.home)?.name,away:c.clubs.find(cl=>cl.id===f.away)?.name,stage:f.stage,matchday:f.matchday,finalizedAt:f.finalized_at,...f.report}));
+      return new Response('\uFEFF'+csv(rows),{headers:{"Content-Type":"text/csv;charset=utf-8","Content-Disposition":`attachment; filename="matchroom-${['clubs','managers','players','awards','audit','proofs'].includes(kind)?kind:'matches'}.csv"`,"Cache-Control":"no-store"}});
+    }
+    if(path[2]==="fixture"&&path[3]){
+      const raw=await query("SELECT * FROM fixtures WHERE id=? AND tournament_id=?",path[3],tid).first<Record<string,unknown>>();if(!raw)fail("Fixture not found.",404);const f=unpack(raw);requireParticipant(m,f,c);
+      if(path[4]==="schedule"&&request.method==="POST"){
+        admin(m);
+        const input=z.object({version:z.number().int(),matchday:z.number().int().min(1).max(100),scheduled:z.string().datetime().nullable()}).parse(await body(request));
+        if(f.status!=="scheduled")fail("Only fixtures awaiting their first report can be rescheduled.");
+        const op=id();const saved=await db().batch([
+          query("UPDATE fixtures SET matchday=?,scheduled=?,version=version+1,mutation=? WHERE id=? AND version=? AND status='scheduled' AND EXISTS(SELECT 1 FROM tournaments WHERE id=? AND locked_at IS NULL)",input.matchday,input.scheduled,op,f.id,input.version,tid),
+          query('INSERT INTO audit(id,tournament_id,fixture_id,actor_id,actor_name,at,action,reason,"before","after") SELECT ?,?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM fixtures WHERE id=? AND mutation=?)',id(),tid,f.id,user.userId,user.displayName,now(),"reschedule","Organizer updated the fixture calendar.",JSON.stringify({matchday:f.matchday,scheduled:f.scheduled}),JSON.stringify(input),f.id,op),
+          query("UPDATE tournaments SET revision=revision+1 WHERE id=? AND EXISTS(SELECT 1 FROM fixtures WHERE id=? AND mutation=?)",tid,f.id,op),
+        ]);
+        if(saved[0].meta.changes!==1)fail("The fixture changed or awards are locked. Refresh before scheduling.",409);
+        return json({ok:true});
+      }
+      if(path[4]==="proofs"){
+        if(request.method==="GET")return json(await all("SELECT id,name,category,mime,size,uploader,uploaded_at FROM proofs WHERE fixture_id=? ORDER BY uploaded_at",f.id));
+        if(request.method==="POST"){
+          if(!['scheduled','correction'].includes(f.status))fail("Proof can be added before submission or after a correction request.");
+
+          const buffered=await bytes(request,8*1024*1024+65536);
+          const form=await new Request(request.url,{method:"POST",headers:request.headers,body:buffered}).formData();
+          const file=form.get("file"),category=String(form.get("category"));
+          if(!(file instanceof File)||file.size<12||file.size>8*1024*1024)fail("Choose a JPEG, PNG or WebP image up to 8 MB.");
+          if(!['final-score','match-facts','players','shootout'].includes(category))fail("Choose a proof category.");
+          const contents=await file.arrayBuffer(),head=new Uint8Array(contents),ascii=(a:number,b:number)=>new TextDecoder().decode(head.slice(a,b));
+          const mime=head[0]===255&&head[1]===216&&head[2]===255?'image/jpeg':head[0]===137&&ascii(1,4)==='PNG'&&head[4]===13&&head[5]===10&&head[6]===26&&head[7]===10?'image/png':ascii(0,4)==='RIFF'&&ascii(8,12)==='WEBP'?'image/webp':null;
+          if(!mime)fail("The file is not a supported image. SVG and renamed files are not accepted.");
+          const count=await query("SELECT COUNT(*) AS n FROM proofs WHERE fixture_id=?",f.id).first<{n:number}>();if((count?.n??0)>=12)fail("This match already has 12 proof images.");
+          const pid=id(),key=`${tid}/${f.id}/${pid}`,at=now();await proofStore.put(key,contents);
+          try{
+            const saved=await db().batch([
+              query("INSERT INTO proofs(id,tournament_id,fixture_id,uploader,uploaded_at,category,name,mime,size,key) SELECT ?,?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM fixtures WHERE id=? AND version=? AND status IN ('scheduled','correction')) AND (SELECT COUNT(*) FROM proofs WHERE fixture_id=?)<12",pid,tid,f.id,user.userId,at,category,file.name.slice(0,120),mime,file.size,key,f.id,f.version,f.id),
+              query('INSERT INTO audit(id,tournament_id,fixture_id,actor_id,actor_name,at,action,reason,"before","after") SELECT ?,?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM proofs WHERE id=?)',id(),tid,f.id,user.userId,user.displayName,at,"upload-proof","Original image stored.","null",JSON.stringify({id:pid,category,size:file.size}),pid),
+            ]);if(saved[0].meta.changes!==1)fail("The report changed during upload. Reopen it.",409);
+          }catch(e){await proofStore.delete(key);throw e;}
+          return json({id:pid});
+        }
+      }
+      if(request.method==="POST")return changeFixture(t,m,user,f,await body(request));
+    }
+    if(request.method!=="POST")fail("Endpoint not found.",404);
+    admin(m);const data=await body(request);
+    if(path[2]==="fixtures"){
+      if(t.locked_at)fail("Unlock the awards before adding fixtures.");
+      const input=z.object({home:z.string(),away:z.string(),stage:z.enum(["league","final"]),matchday:z.number().int().min(1).max(100),scheduled:z.string().datetime().nullable()}).parse(data);
+      if(input.home===input.away||![input.home,input.away].every(cid=>c.clubs.some(cl=>cl.id===cid)))fail("Choose two different clubs.");
+      const home=c.clubs.find(cl=>cl.id===input.home)!,away=c.clubs.find(cl=>cl.id===input.away)!;
+      if(!home.manager||!away.manager)fail("Import the completed manager draw before scheduling these clubs, so their managers can submit and confirm results.");
+      if(c.leaguePhase?.forbidSameManager&&home.manager&&home.manager===away.manager)fail("Clubs managed by the same manager cannot meet.");
+      const fixture=id();const saved=await db().batch([
+        query("INSERT INTO fixtures(id,tournament_id,home,away,stage,matchday,scheduled) SELECT ?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM tournaments WHERE id=? AND locked_at IS NULL AND revision=?)",fixture,tid,input.home,input.away,input.stage,input.matchday,input.scheduled,tid,t.revision),
+        query('INSERT INTO audit(id,tournament_id,fixture_id,actor_id,actor_name,at,action,reason,"before","after") SELECT ?,?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM fixtures WHERE id=?)',id(),tid,fixture,user.userId,user.displayName,now(),"create-fixture","Fixture scheduled.","null",JSON.stringify(input),fixture),
+        query("UPDATE tournaments SET revision=revision+1 WHERE id=? AND EXISTS(SELECT 1 FROM fixtures WHERE id=?)",tid,fixture),
+      ]);if(saved[0].meta.changes!==1)fail("The tournament changed. Refresh and try again.",409);return json({ok:true});
+    }
+    if(path[2]==="invite"){
+      const invite=z.object({email:z.string().email().max(254),managerId:z.string()}).parse(data);
+      if(!c.managers.some(manager=>manager.id===invite.managerId))fail("Choose a manager.");
+      const existing=await query("SELECT * FROM members WHERE tournament_id=? AND manager_id=?",tid,invite.managerId).first<Member>();
+      if(existing){
+        if(existing.email!==invite.email.toLowerCase())fail("This manager already has a different account assignment.");
+        const access=managerInvitation(tid,existing.email,existing.name);
+        await auditInsert(tid,user,"refresh-invitation","Organizer refreshed manager account access.",{manager:invite.managerId},{existingAccount:access.existingAccount}).run();
+        return json(access);
+      }
+      const mid=id();const saved=await db().batch([
+        query("INSERT INTO members(id,tournament_id,email,name,role,manager_id) SELECT ?,?,?,?,'manager',? WHERE EXISTS(SELECT 1 FROM tournaments WHERE id=? AND revision=?)",mid,tid,invite.email.toLowerCase(),c.managers.find(manager=>manager.id===invite.managerId)!.name,invite.managerId,tid,t.revision),
+        query('INSERT INTO audit(id,tournament_id,actor_id,actor_name,at,action,reason,"before","after") SELECT ?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM members WHERE id=?)',id(),tid,user.userId,user.displayName,now(),"invite-manager","Account email authorized; no email sent.","null",JSON.stringify(invite),mid),
+        query("UPDATE tournaments SET revision=revision+1 WHERE id=? AND EXISTS(SELECT 1 FROM members WHERE id=?)",tid,mid),
+      ]);if(saved[0].meta.changes!==1)fail("The tournament changed. Refresh before assigning the manager.",409);
+      return json(managerInvitation(tid,invite.email.toLowerCase(),c.managers.find(manager=>manager.id===invite.managerId)!.name));
+    }
+    if(path[2]==="awards"){
+      const fs=await getFixtures(tid),reason=String(data.reason??"").trim().slice(0,2000);
+      if(data.action==="lock"){
+        if(t.locked_at)fail("Awards are already locked.");if(!fs.some(f=>f.status==="finalized"))fail("Finalize at least one match first.");
+        if(fs.some(f=>f.status!=="finalized"))fail("Finalize every scheduled fixture before locking tournament awards.");
+        const snapshot=awards(c,fs),at=now();
+        const res=await db().batch([query("UPDATE tournaments SET awards=?,locked_at=?,revision=revision+1 WHERE id=? AND revision=? AND locked_at IS NULL",JSON.stringify(snapshot),at,tid,t.revision),
+          query('INSERT INTO audit(id,tournament_id,actor_id,actor_name,at,action,reason,"before","after") SELECT ?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM tournaments WHERE id=? AND locked_at=?)',id(),tid,user.userId,user.displayName,at,"lock-awards",reason||"Tournament awards locked.","null",JSON.stringify(snapshot),tid,at)]);
+        if(res[0].meta.changes!==1)fail("The tournament changed; refresh before locking awards.",409);
+      }else if(data.action==="unlock"){
+        if(!t.locked_at)fail("Awards are not locked.");if(!reason)fail("Explain why you are unlocking the awards.");
+        const saved=await db().batch([query("UPDATE tournaments SET awards=NULL,locked_at=NULL,revision=revision+1 WHERE id=? AND revision=? AND locked_at IS NOT NULL",tid,t.revision),query('INSERT INTO audit(id,tournament_id,actor_id,actor_name,at,action,reason,"before","after") SELECT ?,?,?,?,?,?,?,?,? WHERE changes()=1',id(),tid,user.userId,user.displayName,now(),"unlock-awards",reason,JSON.stringify({awards:JSON.parse(t.awards??"[]"),lockedAt:t.locked_at}),"null")]);
+        if(saved[0].meta.changes!==1)fail("The award snapshot changed. Refresh before unlocking.",409);
+      }else fail("Unknown awards action.");return json({ok:true});
+    }
+    if(path[2]==="import"){
+      const fs=await getFixtures(tid);if(fs.length)fail("Import the draw before adding fixtures. Create a new tournament to import another draw.");
+      const input=data.data;
+      async function saveConfig(next:Config,action:string,details:unknown){
+        const op=id();const saved=await db().batch([
+          query("UPDATE tournaments SET name=?,config=?,revision=revision+1,mutation=? WHERE id=? AND revision=? AND locked_at IS NULL AND NOT EXISTS(SELECT 1 FROM fixtures WHERE tournament_id=?)",next.name,JSON.stringify(next),op,tid,t!.revision,tid),
+          query('INSERT INTO audit(id,tournament_id,actor_id,actor_name,at,action,reason,"before","after") SELECT ?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM tournaments WHERE id=? AND mutation=?)',id(),tid,user!.userId,user!.displayName,now(),action,"Completed Unity data imported.",t!.config,JSON.stringify(details),tid,op),
+        ]);if(saved[0].meta.changes!==1)fail("The tournament changed. Refresh before importing.",409);
+      }
+      if(input?.clubs){
+        const parsed=configSchema.parse(input);
+        const currentMembers=await all<Member>("SELECT * FROM members WHERE tournament_id=?",tid);
+        if(currentMembers.some(member=>member.manager_id&&!parsed.managers.some(manager=>manager.id===member.manager_id)))fail("The config removes an assigned manager. Start a new tournament for a different manager list.");
+        await saveConfig(parsed,"import-config",parsed);return json({ok:true});
+      }
+      if(input?.exportFormatVersion!==1||input.complete!==true||input.tournamentId!==c.tournamentId)fail("Use a complete Unity draw export for this tournament (format version 1).");
+      if(input.mode==="ManagerClubs"){
+        const assignments=z.array(z.object({clubId:z.string(),managerId:z.string()})).parse(input.results?.assignments);
+        if(assignments.length!==c.clubs.length||new Set(assignments.map(a=>a.clubId)).size!==c.clubs.length)fail("The assignment file must contain every club exactly once.");
+        for(const a of assignments){const club=c.clubs.find(cl=>cl.id===a.clubId);if(!club||!c.managers.some(manager=>manager.id===a.managerId))fail("Unknown club or manager in draw.");club.manager=a.managerId;}
+        for(const manager of c.managers){const own=c.clubs.filter(cl=>cl.manager===manager.id);if(own.length!==(c.managerDraw?.clubsPerManager??3))fail("A manager has an unexpected number of clubs.");if(c.managerDraw?.distinctPots!==false&&new Set(own.map(cl=>cl.pot)).size!==own.length)fail("A manager has multiple clubs from the same pot.");}
+        await saveConfig(c,"import-assignments",{config:c,seed:input.seed,configHash:input.configHash,engineVersion:input.engineVersion});return json({ok:true});
+      }
+      if(input.mode!=="LeaguePhase")fail("Unsupported Unity draw mode.");
+      if(c.clubs.some(cl=>!cl.manager))fail("Import the manager assignments or a config with assigned managers first.");
+      const pairs=z.array(z.object({homeClubId:z.string(),awayClubId:z.string(),drawIndex:z.number().int()})).min(1).max(1000).parse(input.results?.fixtures);
+      const seen=new Set<string>();
+      for(const p of pairs){const home=c.clubs.find(cl=>cl.id===p.homeClubId),away=c.clubs.find(cl=>cl.id===p.awayClubId),key=[p.homeClubId,p.awayClubId].sort().join("/");
+        if(!home||!away||home.id===away.id||seen.has(key))fail("The draw contains an unknown, repeated or self pairing.");seen.add(key);
+        if(c.leaguePhase?.forbidSameManager&&home.manager===away.manager)fail("The draw contains a same-manager pairing.");
+        if(c.leaguePhase?.forbidSameCountry&&home.country&&home.country===away.country)fail("The draw contains a same-country pairing.");
+      }
+      for(const club of c.clubs){
+        const own=pairs.filter(p=>p.homeClubId===club.id||p.awayClubId===club.id);
+        for(const pot of c.pots){const homes=own.filter(p=>p.homeClubId===club.id&&c.clubs.find(cl=>cl.id===p.awayClubId)?.pot===pot.id).length,aways=own.filter(p=>p.awayClubId===club.id&&c.clubs.find(cl=>cl.id===p.homeClubId)?.pot===pot.id).length;if(homes!==(c.leaguePhase?.homePerPot??1)||aways!==(c.leaguePhase?.awayPerPot??1))fail(`Incomplete home/away pot quotas for ${club.name}.`);}
+        const cap=c.leaguePhase?.maxOpponentsPerCountry??0;if(cap){const counts:Record<string,number>={};for(const p of own){const country=c.clubs.find(cl=>cl.id===(p.homeClubId===club.id?p.awayClubId:p.homeClubId))?.country;if(country&&(counts[country]=(counts[country]??0)+1)>cap)fail(`Country limit exceeded for ${club.name}.`);}}
+      }
+      // The Unity export supplies pairings, not calendar matchdays. Keep them
+      // together in an unscheduled draw round instead of fabricating an order.
+      const op=id();const saved=await db().batch([
+        query("UPDATE tournaments SET revision=revision+1,mutation=? WHERE id=? AND revision=? AND locked_at IS NULL AND NOT EXISTS(SELECT 1 FROM fixtures WHERE tournament_id=?)",op,tid,t.revision,tid),
+        ...pairs.map(p=>query("INSERT INTO fixtures(id,tournament_id,home,away,stage,matchday) SELECT ?,?,?,?,'league',1 WHERE EXISTS(SELECT 1 FROM tournaments WHERE id=? AND mutation=?)",id(),tid,p.homeClubId,p.awayClubId,tid,op)),
+        query('INSERT INTO audit(id,tournament_id,actor_id,actor_name,at,action,reason,"before","after") SELECT ?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM tournaments WHERE id=? AND mutation=?)',id(),tid,user.userId,user.displayName,now(),"import-fixtures","Unity pairings imported; schedule to be assigned.","null",JSON.stringify({seed:input.seed,configHash:input.configHash,engineVersion:input.engineVersion,fixtures:pairs.length}),tid,op),
+      ]);if(saved[0].meta.changes!==1)fail("The tournament changed. Refresh before importing fixtures.",409);return json({ok:true});
+    }
+    fail("Endpoint not found.",404);
+  }catch(error){
+    if(error instanceof HttpError)return json({error:error.message},error.status);
+    if(error instanceof z.ZodError)return json({error:error.issues.slice(0,3).map(i=>`${i.path.join(".")}: ${i.message}`).join(" · ")},400);
+    if(error instanceof Error&&(/UNIQUE constraint/.test(error.message)))return json({error:"That fixture or membership already exists."},409);
+    console.error("Tournament request failed",error);return json({error:"The change could not be saved. Please retry."},500);
+  }
+}

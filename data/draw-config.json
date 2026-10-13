@@ -1,0 +1,369 @@
+{
+  "tournamentId": "ucl-fantasy-2026",
+  "name": "UCL Fantasy 2026/27 Draw",
+  "pots": [
+    {
+      "id": "P1",
+      "name": "Pot 1"
+    },
+    {
+      "id": "P2",
+      "name": "Pot 2"
+    },
+    {
+      "id": "P3",
+      "name": "Pot 3"
+    }
+  ],
+  "managers": [
+    {
+      "id": "max",
+      "name": "Max"
+    },
+    {
+      "id": "manager-2",
+      "name": "Jose"
+    },
+    {
+      "id": "manager-3",
+      "name": "Antonio"
+    },
+    {
+      "id": "manager-4",
+      "name": "Jorge"
+    },
+    {
+      "id": "manager-5",
+      "name": "Manager 5"
+    },
+    {
+      "id": "manager-6",
+      "name": "Manager 6"
+    },
+    {
+      "id": "manager-7",
+      "name": "Manager 7"
+    },
+    {
+      "id": "manager-8",
+      "name": "Manager 8"
+    },
+    {
+      "id": "manager-9",
+      "name": "Manager 9"
+    },
+    {
+      "id": "manager-10",
+      "name": "Manager 10"
+    },
+    {
+      "id": "manager-11",
+      "name": "Manager 11"
+    },
+    {
+      "id": "manager-12",
+      "name": "Manager 12"
+    }
+  ],
+  "clubs": [
+    {
+      "id": "real-madrid",
+      "name": "Real Madrid",
+      "shortName": "REA",
+      "pot": "P1",
+      "country": "ESP",
+      "badge": "Badges/real-madrid.png"
+    },
+    {
+      "id": "man-city",
+      "name": "Man City",
+      "shortName": "MAN",
+      "pot": "P1",
+      "country": "ENG",
+      "badge": "Badges/man-city.png"
+    },
+    {
+      "id": "bayern-munich",
+      "name": "Bayern Munich",
+      "shortName": "BAY",
+      "pot": "P1",
+      "country": "GER",
+      "badge": "Badges/bayern-munich.png"
+    },
+    {
+      "id": "psg",
+      "name": "PSG",
+      "shortName": "PSG",
+      "pot": "P1",
+      "country": "FRA",
+      "badge": "Badges/psg.png"
+    },
+    {
+      "id": "liverpool",
+      "name": "Liverpool",
+      "shortName": "LIV",
+      "pot": "P1",
+      "country": "ENG",
+      "badge": "Badges/liverpool.png"
+    },
+    {
+      "id": "inter",
+      "name": "Inter",
+      "shortName": "INT",
+      "pot": "P1",
+      "country": "ITA",
+      "badge": "Badges/inter.png"
+    },
+    {
+      "id": "dortmund",
+      "name": "Dortmund",
+      "shortName": "DOR",
+      "pot": "P1",
+      "country": "GER",
+      "badge": "Badges/dortmund.png"
+    },
+    {
+      "id": "leipzig",
+      "name": "Leipzig",
+      "shortName": "LEI",
+      "pot": "P1",
+      "country": "GER",
+      "badge": "Badges/leipzig.png"
+    },
+    {
+      "id": "barcelona",
+      "name": "Barcelona",
+      "shortName": "BAR",
+      "pot": "P1",
+      "country": "ESP",
+      "badge": "Badges/barcelona.png"
+    },
+    {
+      "id": "leverkusen",
+      "name": "Leverkusen",
+      "shortName": "LEV",
+      "pot": "P1",
+      "country": "GER",
+      "badge": "Badges/leverkusen.png"
+    },
+    {
+      "id": "atletico-madrid",
+      "name": "Atletico Madrid",
+      "shortName": "ATL",
+      "pot": "P1",
+      "country": "ESP",
+      "badge": "Badges/atletico-madrid.png"
+    },
+    {
+      "id": "atalanta",
+      "name": "Atalanta",
+      "shortName": "ATA",
+      "pot": "P1",
+      "country": "ITA",
+      "badge": "Badges/atalanta.png"
+    },
+    {
+      "id": "juventus",
+      "name": "Juventus",
+      "shortName": "JUV",
+      "pot": "P2",
+      "country": "ITA",
+      "badge": "Badges/juventus.png"
+    },
+    {
+      "id": "benfica",
+      "name": "Benfica",
+      "shortName": "BEN",
+      "pot": "P2",
+      "country": "POR",
+      "badge": "Badges/benfica.png"
+    },
+    {
+      "id": "arsenal",
+      "name": "Arsenal",
+      "shortName": "ARS",
+      "pot": "P2",
+      "country": "ENG",
+      "badge": "Badges/arsenal.png"
+    },
+    {
+      "id": "club-brugge",
+      "name": "Club Brugge",
+      "shortName": "CLU",
+      "pot": "P2",
+      "country": "BEL",
+      "badge": "Badges/club-brugge.png"
+    },
+    {
+      "id": "shakhtar",
+      "name": "Shakhtar",
+      "shortName": "SHA",
+      "pot": "P2",
+      "country": "UKR",
+      "badge": "Badges/shakhtar.png"
+    },
+    {
+      "id": "ac-milan",
+      "name": "AC Milan",
+      "shortName": "AC ",
+      "pot": "P2",
+      "country": "ITA",
+      "badge": "Badges/ac-milan.png"
+    },
+    {
+      "id": "feyenoord",
+      "name": "Feyenoord",
+      "shortName": "FEY",
+      "pot": "P2",
+      "country": "NED",
+      "badge": "Badges/feyenoord.png"
+    },
+    {
+      "id": "sporting-cp",
+      "name": "Sporting CP",
+      "shortName": "SPO",
+      "pot": "P2",
+      "country": "POR",
+      "badge": "Badges/sporting-cp.png"
+    },
+    {
+      "id": "psv-eindhoven",
+      "name": "PSV Eindhoven",
+      "shortName": "PSV",
+      "pot": "P2",
+      "country": "NED",
+      "badge": "Badges/psv-eindhoven.png"
+    },
+    {
+      "id": "dinamo-zagreb",
+      "name": "Dinamo Zagreb",
+      "shortName": "DIN",
+      "pot": "P2",
+      "country": "CRO",
+      "badge": "Badges/dinamo-zagreb.png"
+    },
+    {
+      "id": "salzburg",
+      "name": "Salzburg",
+      "shortName": "SAL",
+      "pot": "P2",
+      "country": "AUT",
+      "badge": "Badges/salzburg.png"
+    },
+    {
+      "id": "lille",
+      "name": "Lille",
+      "shortName": "LIL",
+      "pot": "P2",
+      "country": "FRA",
+      "badge": "Badges/lille.png"
+    },
+    {
+      "id": "crvena-zvezda",
+      "name": "Crvena Zvezda",
+      "shortName": "CRV",
+      "pot": "P3",
+      "country": "SRB",
+      "badge": "Badges/crvena-zvezda.png"
+    },
+    {
+      "id": "young-boys",
+      "name": "Young Boys",
+      "shortName": "YOU",
+      "pot": "P3",
+      "country": "SUI",
+      "badge": "Badges/young-boys.png"
+    },
+    {
+      "id": "celtic",
+      "name": "Celtic",
+      "shortName": "CEL",
+      "pot": "P3",
+      "country": "SCO",
+      "badge": "Badges/celtic.png"
+    },
+    {
+      "id": "slovan-bratislava",
+      "name": "Slovan Bratislava",
+      "shortName": "SLO",
+      "pot": "P3",
+      "country": "SVK",
+      "badge": "Badges/slovan-bratislava.png"
+    },
+    {
+      "id": "monaco",
+      "name": "Monaco",
+      "shortName": "MON",
+      "pot": "P3",
+      "country": "FRA",
+      "badge": "Badges/monaco.png"
+    },
+    {
+      "id": "sparta-praha",
+      "name": "Sparta Praha",
+      "shortName": "SPA",
+      "pot": "P3",
+      "country": "CZE",
+      "badge": "Badges/sparta-praha.png"
+    },
+    {
+      "id": "aston-villa",
+      "name": "Aston Villa",
+      "shortName": "AST",
+      "pot": "P3",
+      "country": "ENG",
+      "badge": "Badges/aston-villa.png"
+    },
+    {
+      "id": "bologna",
+      "name": "Bologna",
+      "shortName": "BOL",
+      "pot": "P3",
+      "country": "ITA",
+      "badge": "Badges/bologna.png"
+    },
+    {
+      "id": "girona",
+      "name": "Girona",
+      "shortName": "GIR",
+      "pot": "P3",
+      "country": "ESP",
+      "badge": "Badges/girona.png"
+    },
+    {
+      "id": "stuttgart",
+      "name": "Stuttgart",
+      "shortName": "STU",
+      "pot": "P3",
+      "country": "GER",
+      "badge": "Badges/stuttgart.png"
+    },
+    {
+      "id": "sturm-graz",
+      "name": "Sturm Graz",
+      "shortName": "STU",
+      "pot": "P3",
+      "country": "AUT",
+      "badge": "Badges/sturm-graz.png"
+    },
+    {
+      "id": "newcastle-united",
+      "name": "Newcastle United",
+      "shortName": "NEW",
+      "pot": "P3",
+      "country": "ENG",
+      "badge": "Badges/newcastle-united.png"
+    }
+  ],
+  "managerDraw": {
+    "clubsPerManager": 3,
+    "distinctPots": true
+  },
+  "leaguePhase": {
+    "homePerPot": 1,
+    "awayPerPot": 1,
+    "forbidSameManager": true,
+    "forbidSameCountry": false,
+    "maxOpponentsPerCountry": 0
+  }
+}

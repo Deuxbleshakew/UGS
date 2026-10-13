@@ -1,0 +1,11 @@
+import { spawn } from 'node:child_process';
+const mode=process.argv[2];
+if(!['dev','start'].includes(mode))throw new Error('Expected dev or start.');
+process.env.NODE_ENV=mode==='start'?'production':'development';
+await import('./prepare-render.mjs');
+const port=process.env.PORT||(mode==='dev'?'5173':'10000');
+if(!/^\d+$/.test(port)||Number(port)<1||Number(port)>65535)throw new Error('PORT must be a valid port number.');
+const server=spawn(process.execPath,['node_modules/next/dist/bin/next',mode,...(mode==='dev'?['--webpack']:[]),'-H',mode==='dev'?'127.0.0.1':'0.0.0.0','-p',port],{stdio:'inherit',env:process.env});
+for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>server.kill(signal));
+server.on('error',error=>{console.error(error.message);process.exitCode=1;});
+server.on('exit',code=>{process.exitCode=code??1;});

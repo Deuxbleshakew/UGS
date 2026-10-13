@@ -1,0 +1,29 @@
+# One Node service with persistent storage for results and private screenshots.
+services:
+  - type: web
+    name: matchroom
+    runtime: node
+    plan: 0.5c-512mb
+    region: oregon
+    numInstances: 1
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeployTrigger: off
+    disk:
+      name: matchroom-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: 24.18.1
+      - key: MATCHROOM_DATA_DIR
+        value: /var/data/matchroom
+      - key: MATCHROOM_OWNER_EMAIL
+        sync: false
+      - key: MATCHROOM_OWNER_NAME
+        value: Max
+      - key: MATCHROOM_OWNER_PASSWORD
+        generateValue: true

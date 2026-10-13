@@ -1,0 +1,1 @@
+ALTER TABLE `tournaments` ADD `mutation` text;
