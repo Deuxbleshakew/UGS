@@ -11,10 +11,19 @@ The Blueprint creates one web service with a 1 GB persistent disk. Enter the
 organizer email in Render when applying it; the organizer password is generated
 there. Neither credential belongs in the source repository.
 
-TypeScript compilation passed. The local production build is blocked by a
-Windows sandbox canonical-path access error in Next/SWC. A successful production
-build on Render is still required. No automated functional tests or browser QA
-were run, as requested.
+## Live deployment
+
+- App: https://matchroom-aq2w.onrender.com
+- Service: https://dashboard.render.com/web/srv-db6r0a8n74is738m88ag
+- Organizer credentials: https://dashboard.render.com/web/srv-db6r0a8n74is738m88ag/env
+- Blueprint: https://dashboard.render.com/blueprint/exs-db6r03uk1f9s73b7e3cg
+- Deployed application commit: `61a5825890f679f192d096cc814c8c8b025a8a14`.
+
+Render completed the production build and TypeScript compilation. Deployment is
+live; `/api/health` returned HTTP 200 with `{"status":"ok"}`. The sign-in page
+loads. No functional tests were run. The service has the approved 1 GB disk at
+`/var/data` and the 0.5c-512mb compute plan. Automatic app deploys are off; deploy
+manually from Render after pushing application changes.
 
 ## App service settings
 

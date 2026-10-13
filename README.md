@@ -3,6 +3,8 @@
 Responsive tournament management for phones and PCs. Deployment now targets
 **a new Matchroom web service in your Render account**.
 
+**Live app: [matchroom-aq2w.onrender.com](https://matchroom-aq2w.onrender.com)**
+
 **Start here: [DEPLOY-RENDER.md](DEPLOY-RENDER.md)** for the exact settings, storage,
 organizer login and local run instructions. Source repository:
 [Deuxbleshakew/UGS](https://github.com/Deuxbleshakew/UGS).
@@ -55,6 +57,6 @@ difference and goals scored, then alphabetical display order without determining
 qualification. Awards display their calculation/tie rules. Account recovery and
 membership revocation screens remain to be built.
 
-TypeScript compilation passed after the Render migration. Production build
-verification is blocked locally by Windows sandbox path access and must complete
-on Render. No functional or browser tests were run, per your instruction.
+The production build and TypeScript compilation passed on Render. The deployed
+health endpoint returned HTTP 200 with `status: ok`, and the sign-in page loads.
+No functional tests were run, per your instruction.
