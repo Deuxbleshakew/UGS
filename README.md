@@ -1,13 +1,19 @@
-# Matchroom — Tournament HQ
+# UGS — Union Gaming Society
 
-Responsive tournament management for phones and PCs. Deployment now targets
-**a new Matchroom web service in your Render account**.
+Union Gaming's community website for phones and PCs. Matchroom contains Club
+Champions and the player Elo directory; RB Tiquicia has a separate Pro Clubs page.
+Milestone 1 supplies the UGS navigation and branding described below.
+Continue using the existing Next.js application and existing Render service.
 
 **Live app: [matchroom-aq2w.onrender.com](https://matchroom-aq2w.onrender.com)**
 
 **Start here: [DEPLOY-RENDER.md](DEPLOY-RENDER.md)** for the exact settings, storage,
 organizer login and local run instructions. Source repository:
 [Deuxbleshakew/UGS](https://github.com/Deuxbleshakew/UGS).
+
+See [Milestone 1](docs/MILESTONE-1-UGS-SHELL.md) for the branding/navigation scope,
+changed files and manual review checklist. Friendlies, History, Rules & Guide and
+My Profile are explicitly marked Planned; their workflows are not implemented.
 
 ## Included in this first version
 
@@ -31,7 +37,7 @@ See [PLAYER-PLAYOFFS.md](docs/PLAYER-PLAYOFFS.md) for player setup, seeding and 
 3. Import the completed league draw, or schedule matches manually.
 4. Open each imported fixture to assign a matchday and optional date. Unity
    pairings contain no calendar and initially use matchday 1.
-5. Open Tournament setup → Users & access. Create a user with a display name and email, or choose an existing player. Share their private activation link so they can set their own password.
+5. Open Admin → Tournament setup → Users & access. Create a user with a display name and email, or choose an existing player. Share their private activation link so they can set their own password. Username login remains a later milestone.
 6. Participants submit score proof, opponents confirm/dispute, and the organizer
    finalizes. Only finalized records count toward official statistics.
 
