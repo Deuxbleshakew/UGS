@@ -141,6 +141,14 @@ textarea:focus-visible, summary:focus-visible { outline-color: #467bd7; }
 .ugs-team-info p { font-size: 12px; color: var(--muted); }
 .ugs-admin-actions { padding: 28px; }
 .ugs-admin-actions p { font-size: 12px; color: var(--muted); margin-top: 10px; }
+.username-accounts { margin-top: 16px; }
+.username-account { padding: 18px 0; border-top: 1px solid var(--line); display: grid; gap: 14px; }
+.username-account small { display: block; margin-top: 5px; color: var(--muted); overflow-wrap: anywhere; }
+.username-account form { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; }
+.username-account form .field { flex: 1; min-width: 170px; margin: 0; }
+.username-assigned b { color: var(--ugs-blue); overflow-wrap: anywhere; }
+.activation-access { margin: 18px 0; padding: 16px; background: var(--ugs-soft); border: 1px solid var(--line); border-radius: 8px; }
+.user-access-panel .notice { margin-top: 16px; }
 
 /* Brand-only styling on the existing competition/reporting components. */
 .season-hero { background: #10274d; border-bottom: 4px solid var(--ugs-red); }

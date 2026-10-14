@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, readdirSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
 export function dataDirectory() {
@@ -19,6 +19,18 @@ export function database() {
   const db = new DatabaseSync(path.join(dir, 'matchroom.sqlite'), { timeout: 5000 });
   db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');
   try {
+    // Snapshot existing data before the username transition. VACUUM INTO includes
+    // committed WAL data; copying the live SQLite file alone would not be safe.
+    const ledger = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='app_migrations'").get();
+    if (ledger && !db.prepare('SELECT name FROM app_migrations WHERE name=?').get('0007_username_access.sql')
+      && db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='accounts'").get()) {
+      const backups = path.join(dir, 'backups');
+      mkdirSync(backups, {recursive:true, mode:0o700});
+      const snapshot = path.join(backups, `before-username-access-${Date.now()}.sqlite`);
+      db.prepare('VACUUM INTO ?').run(snapshot);
+      chmodSync(snapshot, 0o600);
+      console.log('Created pre-username migration database backup.');
+    }
     // The lock covers discovery and application, so simultaneous starts cannot
     // apply one migration twice. Never edit a migration that has been applied.
     db.exec('BEGIN IMMEDIATE');

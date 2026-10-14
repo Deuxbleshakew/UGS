@@ -32,7 +32,7 @@ export function ensurePlayers(ownerId:string){atomic(()=>{
       if(!link){
         const member=one<{email:string;user_id:string|null;player_id:string|null}>('SELECT email,user_id,player_id FROM members WHERE tournament_id=? AND manager_id=?',t.id,manager.id);
         let player=member?.player_id?one<{id:string}>('SELECT id FROM community_players WHERE id=? AND owner_id=?',member.player_id,ownerId):undefined;
-        if(!player&&member)player=one<{id:string}>('SELECT p.id FROM community_players p JOIN members m ON m.player_id=p.id WHERE p.owner_id=? AND (m.email=? OR (? IS NOT NULL AND m.user_id=?)) LIMIT 1',ownerId,member.email,member.user_id,member.user_id);
+        if(!player&&member)player=one<{id:string}>('SELECT p.id FROM community_players p JOIN members m ON m.player_id=p.id WHERE p.owner_id=? AND ((m.email<>\'\' AND m.email=?) OR (? IS NOT NULL AND m.user_id=?)) LIMIT 1',ownerId,member.email,member.user_id,member.user_id);
         if(!player)player=one<{id:string}>('SELECT p.id FROM community_players p JOIN player_links l ON l.player_id=p.id WHERE p.owner_id=? AND l.manager_id=? AND p.name=? COLLATE NOCASE LIMIT 1',ownerId,manager.id,manager.name.trim());
         if(!player){player={id:id()};db().prepare('INSERT INTO community_players(id,owner_id,name,created_at) VALUES(?,?,?,?)').run(player.id,ownerId,manager.name.trim(),now());}
         db().prepare('INSERT INTO player_links(tournament_id,manager_id,player_id) VALUES(?,?,?)').run(t.id,manager.id,player.id);link={player_id:player.id};
@@ -82,42 +82,6 @@ export function addPlayer(tid:string,user:Actor,input:unknown){
     const p={id:id(),name:data.name,created_at:now()};
     db().prepare('INSERT INTO community_players(id,owner_id,name,created_at) VALUES(?,?,?,?)').run(p.id,t.owner_id,p.name,p.created_at);
     audit(tid,user,'add-player',null,p);return p;
-  });
-}
-
-export function authorizePlayer(tid:string,user:Actor,input:unknown){
-  const data=z.object({playerId:z.string().min(1),email:z.string().trim().email().max(254).transform(s=>s.toLowerCase())}).parse(input);
-  return atomic(()=>authorizePlayerRecord(tid,user,data));
-}
-
-// Both entry points keep the player identity and membership in one transaction.
-function authorizePlayerRecord(tid:string,user:Actor,data:{playerId:string;email:string}){
-    const t=tournament(tid),player=one<CommunityPlayer>('SELECT id,name,created_at FROM community_players WHERE id=? AND owner_id=?',data.playerId,t.owner_id);
-    if(t.owner_id!==user.userId||!one('SELECT id FROM accounts WHERE id=? AND owner=1',user.userId))fail('Only the owner can create or authorize users.',403);
-    if(!player)fail('Choose a player from your community.');
-    const sameEmail=one<{player_id:string|null;manager_id:string|null}>('SELECT player_id,manager_id FROM members WHERE tournament_id=? AND email=?',tid,data.email);
-    const existing=one<{email:string}>('SELECT email FROM members WHERE tournament_id=? AND player_id=?',tid,player.id);
-    if(sameEmail&&sameEmail.player_id!==player.id)fail('That email already represents another player in this tournament.');
-    if(existing&&existing.email!==data.email)fail('This player is already linked to a different email.');
-    const elsewhere=one<{player_id:string}>('SELECT m.player_id FROM members m JOIN tournaments t ON t.id=m.tournament_id WHERE t.owner_id=? AND m.email=? AND m.player_id IS NOT NULL LIMIT 1',t.owner_id,data.email);
-    if(elsewhere&&elsewhere.player_id!==player.id)fail('That email is already linked to a different community player. Use their existing player entry.');
-    const linked=one<{manager_id:string}>('SELECT manager_id FROM player_links WHERE tournament_id=? AND player_id=?',tid,player.id);
-    if(!existing)db().prepare("INSERT INTO members(id,tournament_id,email,name,role,manager_id,player_id) VALUES(?,?,?,?,'manager',?,?)").run(id(),tid,data.email,player.name,linked?.manager_id??null,player.id);
-    audit(tid,user,'authorize-player',null,{playerId:player.id,existingMembership:!!existing});
-    return {email:data.email,name:player.name};
-}
-
-export function createPlayerUser(tid:string,user:Actor,input:unknown){
-  const data=z.object({name:z.string().trim().min(1).max(80),email:z.string().trim().email().max(254).transform(s=>s.toLowerCase())}).parse(input);
-  return atomic(()=>{
-    const t=unlocked(tid);
-    if(t.owner_id!==user.userId||!one('SELECT id FROM accounts WHERE id=? AND owner=1',user.userId))fail('Only the owner can create users.',403);
-    if(one('SELECT id FROM community_players WHERE owner_id=? AND name=? COLLATE NOCASE',t.owner_id,data.name))fail('This player already exists. Choose their existing player profile below.',409);
-    const playerId=id();
-    db().prepare('INSERT INTO community_players(id,owner_id,name,created_at) VALUES(?,?,?,?)').run(playerId,t.owner_id,data.name,now());
-    const result=authorizePlayerRecord(tid,user,{playerId,email:data.email});
-    audit(tid,user,'create-player-user',null,{playerId,name:data.name,role:'manager'});
-    return result;
   });
 }
 
@@ -176,3 +140,4 @@ export function advancePlayoff(tid:string,pid:string,user:Actor,input:unknown){
     return {ok:true};
   });
 }
+

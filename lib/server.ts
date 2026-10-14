@@ -1,12 +1,13 @@
 import { store, proofStore } from "./storage";
-import { getCurrentUser, sameOrigin, managerInvitation, type CurrentUser } from "./auth";
+import { getCurrentUser, sameOrigin, type CurrentUser } from "./auth";
 import seed from "@/data/draw-config.json";
 import { configSchema, reportSchema, validateMatchReport, warnings, standings, managerRows, playerRows, awards, csv, type Config, type Fixture } from "./domain";
 import { z } from "zod";
-import { ensurePlayers, listPlayers, communityRankings, listPlayoffs, managerPlayer, addPlayer, authorizePlayer, createPlayerUser, createPlayoff, advancePlayoff, CompetitionError } from './competition-server';
+import { ensurePlayers, listPlayers, communityRankings, listPlayoffs, managerPlayer, addPlayer, createPlayoff, advancePlayoff, CompetitionError } from './competition-server';
+import {accountDirectory, assignUsername, authorizePlayer, createPlayerUser, AccountAccessError} from './account-access';
 import { checkPlayoffReport, fixtureSide } from './competition';
 
-type Member={id:string;tournament_id:string;user_id:string|null;email:string;name:string;role:string;manager_id:string|null;player_id:string|null};
+type Member={id:string;tournament_id:string;user_id:string|null;email:string;username:string|null;name:string;role:string;manager_id:string|null;player_id:string|null};
 type Tournament={id:string;name:string;owner_id:string;config:string;created_at:string;awards:string|null;locked_at:string|null;revision:number};
 class HttpError extends Error {constructor(public status:number,message:string){super(message);}}
 function fail(message:string,status=400):never{throw new HttpError(status,message);}
@@ -91,27 +92,31 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
     }
     // Email is used only to accept the organizer's explicit pending membership.
     // Once accepted, authorization uses the stable, site-scoped user ID.
-    await query("UPDATE members SET user_id=? WHERE email=? AND user_id IS NULL",user.userId,user.email.toLowerCase()).run();
+    if(!user.username&&user.email)await query("UPDATE members SET user_id=? WHERE email=? AND email<>'' AND username IS NULL AND user_id IS NULL",user.userId,user.email.toLowerCase()).run();
     const url=new URL(request.url);
     if(path[0]==="state"&&request.method==="GET"){
       const choices=await all<{id:string;name:string;role:string}>("SELECT t.id,t.name,CASE WHEN a.owner=1 AND t.owner_id=m.user_id THEN 'admin' ELSE 'manager' END AS role FROM tournaments t JOIN members m ON m.tournament_id=t.id JOIN accounts a ON a.id=m.user_id WHERE m.user_id=? ORDER BY t.created_at DESC",user.userId);
       const tid=url.searchParams.get("tournament")??choices[0]?.id;
-      if(!tid)return json({user,tournaments:[],tournament:null,seed});
+      if(!tid)return json({user,tournaments:[],tournament:null,seed,accountAccess:user.isOwner?accountDirectory(user):undefined});
       let member=await membership(user,tid);const t=await query("SELECT * FROM tournaments WHERE id=?",tid).first<Tournament>();if(!t)fail("Tournament not found.",404);
       ensurePlayers(t.owner_id);member=await membership(user,tid);
       const config=configSchema.parse(JSON.parse(t.config)),fixtures=await getFixtures(tid);
       const visibleFixtures=fixtures.map(f=>f.status==="finalized"||participant(member,f,config)?f:{...f,report:null,note:null,submitted_by:null});
-      return json({user,tournaments:choices,tournament:{...t,config,awards:t.awards?JSON.parse(t.awards):null},member,fixtures:visibleFixtures,players:listPlayers(t.owner_id),rankings:communityRankings(t.owner_id),playoffs:listPlayoffs(tid),
+      return json({user,tournaments:choices,tournament:{...t,config,awards:t.awards?JSON.parse(t.awards):null},member,fixtures:visibleFixtures,players:listPlayers(t.owner_id),rankings:communityRankings(t.owner_id),playoffs:listPlayoffs(tid),accountAccess:user.isOwner?accountDirectory(user):undefined,
         members:member.role==="admin"?(await all<Member>("SELECT * FROM members WHERE tournament_id=?",tid)).map(m=>({...m,role:m.user_id===t.owner_id?'admin':'manager'})):[],
         audit:member.role==="admin"?await all("SELECT * FROM audit WHERE tournament_id=? ORDER BY at DESC LIMIT 100",tid):[],
       });
+    }
+    if(path[0]==='accounts'&&path[1]==='username'&&path.length===2&&request.method==='POST'){
+      if(!user.isOwner)fail('Only the owner can assign usernames.',403);
+      return json(assignUsername(user,await body(request)));
     }
     if(path[0]==="create"&&request.method==="POST"){
       if(!user.isOwner)fail("Only the organizer can create tournaments.",403);
       const data=await body(request),c=configSchema.parse(data.config??{...seed,name:data.name||seed.name});
       const tid=id();await db().batch([
         query("INSERT INTO tournaments(id,name,owner_id,config,created_at) VALUES(?,?,?,?,?)",tid,c.name,user.userId,JSON.stringify(c),now()),
-        query("INSERT INTO members(id,tournament_id,user_id,email,name,role,manager_id) VALUES(?,?,?,?,?,'admin',?)",id(),tid,user.userId,user.email.toLowerCase(),user.displayName,c.managers.find(m=>m.id==="max")?.id??null),
+        query("INSERT INTO members(id,tournament_id,user_id,email,name,role,manager_id,username) VALUES(?,?,?,?,?,'admin',?,?)",id(),tid,user.userId,user.email.toLowerCase(),user.displayName,c.managers.find(m=>m.id==="max")?.id??null,user.username),
         auditInsert(tid,user,"create","Tournament created.",null,{name:c.name,clubs:c.clubs.length}),
       ]);return json({id:tid});
     }
@@ -195,11 +200,11 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
     }
     if(request.method!=="POST")fail("Endpoint not found.",404);
     admin(m);const data=await body(request);
-    if(path[2]==='users'){const authorized=createPlayerUser(tid,user,data);return json(managerInvitation(tid,authorized.email,authorized.name));}
+    if(path[2]==='users')return json(createPlayerUser(tid,user,data));
     if(path[2]==='players')return json(addPlayer(tid,user,data));
     if(path[2]==='playoffs'&&!path[3])return json(createPlayoff(tid,user,data));
     if(path[2]==='playoffs'&&path[3]&&path[4]==='advance')return json(advancePlayoff(tid,path[3],user,data));
-    if(path[2]==='invite'&&data.playerId){const authorized=authorizePlayer(tid,user,data);return json(managerInvitation(tid,authorized.email,authorized.name));}
+    if(path[2]==='invite'&&data.playerId)return json(authorizePlayer(tid,user,data));
     if(path[2]==="fixtures"){
       if(t.locked_at)fail("Unlock the awards before adding fixtures.");
       const input=z.object({home:z.string(),away:z.string(),stage:z.enum(["league","final"]),matchday:z.number().int().min(1).max(100),scheduled:z.string().datetime().nullable()}).parse(data);
@@ -214,21 +219,10 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
       ]);if(saved[0].meta.changes!==1)fail("The tournament changed. Refresh and try again.",409);return json({ok:true});
     }
     if(path[2]==="invite"){
-      const invite=z.object({email:z.string().email().max(254),managerId:z.string()}).parse(data);
-      if(!c.managers.some(manager=>manager.id===invite.managerId))fail("Choose a manager.");
-      const existing=await query("SELECT * FROM members WHERE tournament_id=? AND manager_id=?",tid,invite.managerId).first<Member>();
-      if(existing){
-        if(existing.email!==invite.email.toLowerCase())fail("This manager already has a different account assignment.");
-        const access=managerInvitation(tid,existing.email,existing.name);
-        await auditInsert(tid,user,"refresh-invitation","Organizer refreshed manager account access.",{manager:invite.managerId},{existingAccount:access.existingAccount}).run();
-        return json(access);
-      }
-      const mid=id();const saved=await db().batch([
-        query("INSERT INTO members(id,tournament_id,email,name,role,manager_id) SELECT ?,?,?,?,'manager',? WHERE EXISTS(SELECT 1 FROM tournaments WHERE id=? AND revision=?)",mid,tid,invite.email.toLowerCase(),c.managers.find(manager=>manager.id===invite.managerId)!.name,invite.managerId,tid,t.revision),
-        query('INSERT INTO audit(id,tournament_id,actor_id,actor_name,at,action,reason,"before","after") SELECT ?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM members WHERE id=?)',id(),tid,user.userId,user.displayName,now(),"invite-manager","Account email authorized; no email sent.","null",JSON.stringify(invite),mid),
-        query("UPDATE tournaments SET revision=revision+1 WHERE id=? AND EXISTS(SELECT 1 FROM members WHERE id=?)",tid,mid),
-      ]);if(saved[0].meta.changes!==1)fail("The tournament changed. Refresh before assigning the manager.",409);
-      return json(managerInvitation(tid,invite.email.toLowerCase(),c.managers.find(manager=>manager.id===invite.managerId)!.name));
+      const managerId=z.string().min(1).parse(data.managerId);
+      const playerId=managerPlayer(tid,managerId);
+      if(!playerId||!c.managers.some(manager=>manager.id===managerId))fail('Choose an existing manager.');
+      return json(authorizePlayer(tid,user,{...data,playerId}));
     }
     if(path[2]==="awards"){
       const fs=await getFixtures(tid),reason=String(data.reason??"").trim().slice(0,2000);
@@ -293,10 +287,11 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
     }
     fail("Endpoint not found.",404);
   }catch(error){
-    if(error instanceof CompetitionError)return json({error:error.message},error.status);
+    if(error instanceof CompetitionError||error instanceof AccountAccessError)return json({error:error.message},error.status);
     if(error instanceof HttpError)return json({error:error.message},error.status);
     if(error instanceof z.ZodError)return json({error:error.issues.slice(0,3).map(i=>`${i.path.join(".")}: ${i.message}`).join(" · ")},400);
     if(error instanceof Error&&(/UNIQUE constraint/.test(error.message)))return json({error:"That fixture or membership already exists."},409);
     console.error("Tournament request failed",error);return json({error:"The change could not be saved. Please retry."},500);
   }
 }
+

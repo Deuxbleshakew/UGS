@@ -3,10 +3,11 @@ import {useEffect,useRef,type ReactNode,type CSSProperties} from "react";
 import {Shield,ClipboardList,X,ChevronRight} from "lucide-react";
 import {statusNames,type Config,type Fixture,type awards} from "@/lib/domain";
 import {fixtureSide,stageLabel,type CommunityPlayer,type EloRow,type Playoff} from '@/lib/competition';
-export type User={userId:string;displayName:string;email:string;isOwner:boolean};
-export type Member={id:string;user_id:string|null;email:string;name:string;role:string;manager_id:string|null;player_id?:string|null};
+import type {AccountAccessRow} from '@/lib/account-access';
+export type User={userId:string;displayName:string;email:string;username:string|null;isOwner:boolean};
+export type Member={id:string;user_id:string|null;email:string;username:string|null;name:string;role:string;manager_id:string|null;player_id?:string|null};
 export type Audit={id:string;actor_name:string;at:string;action:string;reason:string;before:string;after:string};
-export type AppState={user:User;tournaments:{id:string;name:string;role:string}[];tournament:null|{id:string;name:string;config:Config;locked_at:string|null;awards:ReturnType<typeof awards>|null};member?:Member;fixtures?:Fixture[];members?:Member[];audit?:Audit[];players?:CommunityPlayer[];rankings?:EloRow[];playoffs?:Playoff[]};
+export type AppState={user:User;tournaments:{id:string;name:string;role:string}[];tournament:null|{id:string;name:string;config:Config;locked_at:string|null;awards:ReturnType<typeof awards>|null};member?:Member;fixtures?:Fixture[];members?:Member[];audit?:Audit[];players?:CommunityPlayer[];rankings?:EloRow[];playoffs?:Playoff[];accountAccess?:AccountAccessRow[]};
 export const colors=["#283c8b","#e54d54","#39726b","#bd8a28","#7256aa","#3b71a9"];
 export function Crest({club,small=false}:{club?:{id:string;name:string;shortName?:string};small?:boolean}){
   const hash=[...(club?.id??"")].reduce((a,b)=>a+b.charCodeAt(0),0);

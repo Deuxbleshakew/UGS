@@ -4,14 +4,15 @@ import { sql } from 'drizzle-orm';
 export const accounts=sqliteTable('accounts',{
   id:text('id').primaryKey(),email:text('email').notNull(),name:text('name').notNull(),
   passwordHash:text('password_hash').notNull(),owner:integer('owner').notNull().default(0),createdAt:text('created_at').notNull(),
-},t=>[uniqueIndex('account_email').on(t.email),uniqueIndex('account_single_owner').on(t.owner).where(sql`${t.owner} = 1`)]);
+},t=>[uniqueIndex('account_email').on(t.email).where(sql`${t.email} <> ''`),uniqueIndex('account_single_owner').on(t.owner).where(sql`${t.owner} = 1`)]);
 export const sessions=sqliteTable('sessions',{
   tokenHash:text('token_hash').primaryKey(),accountId:text('account_id').notNull().references(()=>accounts.id),expiresAt:integer('expires_at').notNull(),
 },t=>[index('session_account').on(t.accountId)]);
 export const invitations=sqliteTable('invitations',{
   tokenHash:text('token_hash').primaryKey(),email:text('email').notNull(),name:text('name').notNull(),
   tournamentId:text('tournament_id').notNull().references(()=>tournaments.id),expiresAt:integer('expires_at').notNull(),
-},t=>[index('invitation_email').on(t.email)]);
+  username:text('username').references(()=>accountUsernames.username),
+},t=>[index('invitation_email').on(t.email),uniqueIndex('invitation_username').on(t.username).where(sql`${t.username} IS NOT NULL`)]);
 export const authLimits=sqliteTable('auth_limits',{
   key:text('key').primaryKey(),count:integer('count').notNull(),expiresAt:integer('expires_at').notNull(),
 });
@@ -26,7 +27,8 @@ export const members = sqliteTable("members", {
   userId: text("user_id"), email: text("email").notNull(), name: text("name").notNull(),
   role: text("role").notNull(), managerId: text("manager_id"),
   playerId:text('player_id').references(()=>communityPlayers.id),
-}, t=>[uniqueIndex("member_email").on(t.tournamentId,t.email),uniqueIndex("member_manager").on(t.tournamentId,t.managerId),uniqueIndex('member_player').on(t.tournamentId,t.playerId), index("member_user").on(t.userId)]);
+  username:text('username').references(()=>accountUsernames.username),
+}, t=>[uniqueIndex("member_email").on(t.tournamentId,t.email).where(sql`${t.email} <> ''`),uniqueIndex("member_manager").on(t.tournamentId,t.managerId),uniqueIndex('member_player').on(t.tournamentId,t.playerId),uniqueIndex('member_username').on(t.tournamentId,t.username).where(sql`${t.username} IS NOT NULL`), index("member_user").on(t.userId)]);
 export const fixtures = sqliteTable("fixtures", {
   id: text("id").primaryKey(), tournamentId: text("tournament_id").notNull().references(()=>tournaments.id),
   home: text("home").notNull(), away: text("away").notNull(), stage: text("stage").notNull(),
@@ -56,6 +58,16 @@ export const audit = sqliteTable("audit", {
 export const communityPlayers=sqliteTable('community_players',{
   id:text('id').primaryKey(),ownerId:text('owner_id').notNull().references(()=>accounts.id),name:text('name').notNull(),createdAt:text('created_at').notNull(),
 },t=>[index('community_player_owner').on(t.ownerId)]);
+export const accountUsernames=sqliteTable('account_usernames',{
+  username:text('username').primaryKey(),accountId:text('account_id').references(()=>accounts.id),
+  playerId:text('player_id').references(()=>communityPlayers.id),createdAt:text('created_at').notNull(),
+},t=>[uniqueIndex('username_account').on(t.accountId),uniqueIndex('username_player').on(t.playerId),
+  check('username_format',sql`length(${t.username}) BETWEEN 3 AND 24 AND ${t.username}=lower(${t.username}) AND ${t.username} NOT GLOB '*[^a-z0-9_]*'`)]);
+export const accountAccessAudit=sqliteTable('account_access_audit',{
+  id:text('id').primaryKey(),actorId:text('actor_id').notNull().references(()=>accounts.id),
+  targetAccountId:text('target_account_id').references(()=>accounts.id),username:text('username').notNull(),
+  action:text('action').notNull(),createdAt:text('created_at').notNull(),
+},t=>[index('account_access_actor').on(t.actorId,t.createdAt)]);
 export const playerLinks=sqliteTable('player_links',{
   tournamentId:text('tournament_id').notNull().references(()=>tournaments.id),managerId:text('manager_id').notNull(),playerId:text('player_id').notNull().references(()=>communityPlayers.id),
 },t=>[primaryKey({columns:[t.tournamentId,t.managerId]})]);
