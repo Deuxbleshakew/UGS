@@ -3,8 +3,10 @@ import { getCurrentUser, sameOrigin, managerInvitation, type CurrentUser } from 
 import seed from "@/data/draw-config.json";
 import { configSchema, reportSchema, validateMatchReport, warnings, standings, managerRows, playerRows, awards, csv, type Config, type Fixture } from "./domain";
 import { z } from "zod";
+import { ensurePlayers, listPlayers, communityRankings, listPlayoffs, managerPlayer, addPlayer, authorizePlayer, createPlayoff, advancePlayoff, CompetitionError } from './competition-server';
+import { checkPlayoffReport, fixtureSide } from './competition';
 
-type Member={id:string;tournament_id:string;user_id:string|null;email:string;name:string;role:string;manager_id:string|null};
+type Member={id:string;tournament_id:string;user_id:string|null;email:string;name:string;role:string;manager_id:string|null;player_id:string|null};
 type Tournament={id:string;name:string;owner_id:string;config:string;created_at:string;awards:string|null;locked_at:string|null;revision:number};
 class HttpError extends Error {constructor(public status:number,message:string){super(message);}}
 function fail(message:string,status=400):never{throw new HttpError(status,message);}
@@ -19,7 +21,7 @@ async function membership(user:CurrentUser,tid:string){
   if(!m)fail("You do not have access to this tournament.",403);return m;
 }
 const admin=(m:Member)=>{if(m.role!=="admin")fail("Only the organizer can do that.",403);};
-function participant(m:Member,f:Fixture,c:Config){return m.role==="admin"||c.clubs.some(club=>[f.home,f.away].includes(club.id)&&club.manager===m.manager_id);}
+function participant(m:Member,f:Fixture,c:Config){return m.role==="admin"||(f.kind==='player'?!!m.player_id&&[f.home,f.away].includes(m.player_id):c.clubs.some(club=>[f.home,f.away].includes(club.id)&&club.manager===m.manager_id));}
 function requireParticipant(m:Member,f:Fixture,c:Config){if(!participant(m,f,c))fail("This match belongs to other managers.",403);}
 function auditInsert(tid:string,user:CurrentUser,action:string,reason:string,before:unknown,after:unknown,fixture:string|null=null){
   return query('INSERT INTO audit(id,tournament_id,fixture_id,actor_id,actor_name,at,action,reason,"before","after") VALUES(?,?,?,?,?,?,?,?,?,?)',id(),tid,fixture,user.userId,user.displayName,now(),action,reason,JSON.stringify(before),JSON.stringify(after));
@@ -42,15 +44,18 @@ async function changeFixture(t:Tournament,m:Member,user:CurrentUser,f:Fixture,da
     if(action==="submit"&&!['scheduled','correction'].includes(f.status))fail("This report is already under review.",409);
     if(action==="edit"){admin(m);if(!reason)fail("Explain why you are editing this report.");if(f.status==="finalized")fail("Finalized reports cannot be edited in this first version.");}
     report=reportSchema.parse(data.report);checkReport(report,f);
+    if(f.tie_id){try{checkPlayoffReport(report,f,await getFixtures(t.id));}catch(e){fail((e as Error).message);}}
     const proof=await query("SELECT id FROM proofs WHERE fixture_id=? AND category='final-score' LIMIT 1",f.id).first();
     if(!proof)fail("Upload a final-score screenshot before submitting.");
     status="pending";note=action==="edit"?reason:null;submittedBy=user.userId;submittedAt=now();
-    const h=c.clubs.find(cl=>cl.id===f.home)?.manager,a=c.clubs.find(cl=>cl.id===f.away)?.manager;
-    submittedManager=m.manager_id&&[h,a].includes(m.manager_id)?m.manager_id:h??null;
+    const h=f.kind==='player'?f.home:c.clubs.find(cl=>cl.id===f.home)?.manager,a=f.kind==='player'?f.away:c.clubs.find(cl=>cl.id===f.away)?.manager;
+    const identity=f.kind==='player'?m.player_id:m.manager_id;
+    submittedManager=identity&&[h,a].includes(identity)?identity:h??null;
   }else if(action==="confirm"||action==="dispute"){
     if(f.status!=="pending")fail("This match is not awaiting opponent confirmation.",409);
-    const h=c.clubs.find(cl=>cl.id===f.home)?.manager,a=c.clubs.find(cl=>cl.id===f.away)?.manager;
-    if(user.userId===f.submitted_by||!m.manager_id||![h,a].includes(m.manager_id)||m.manager_id===f.submitted_manager)fail("Only the opposing manager can confirm or dispute this report.",403);
+    const h=f.kind==='player'?f.home:c.clubs.find(cl=>cl.id===f.home)?.manager,a=f.kind==='player'?f.away:c.clubs.find(cl=>cl.id===f.away)?.manager;
+    const identity=f.kind==='player'?m.player_id:m.manager_id;
+    if(user.userId===f.submitted_by||!identity||![h,a].includes(identity)||identity===f.submitted_manager)fail("Only the opposing player can confirm or dispute this report.",403);
     if(action==="dispute"&&!reason)fail("Add a reason so the organizer can resolve the dispute.");
     status=action==="confirm"?"confirmed":"disputed";note=reason||"Opponent confirmed the report.";
   }else if(action==="correction"){
@@ -59,13 +64,17 @@ async function changeFixture(t:Tournament,m:Member,user:CurrentUser,f:Fixture,da
     admin(m);if(t.locked_at)fail("Unlock the awards before finalizing more results.");
     if(!['pending','confirmed','disputed'].includes(f.status)||!report)fail("Submit a report before finalizing it.");
     if((f.status!=="confirmed"||warnings(report,f).length)&&!reason)fail("Explain the override when the opponent has not confirmed or statistics are flagged.");
-    checkReport(report,f);status="finalized";finalizedAt=now();note=reason||"Organizer approved the confirmed result.";
+    checkReport(report,f);
+    if(f.tie_id){try{checkPlayoffReport(report,f,await getFixtures(t.id));}catch(e){fail((e as Error).message);}}
+    status="finalized";finalizedAt=now();note=reason||"Organizer approved the confirmed result.";
   }else fail("Unknown review action.");
   const operation=id(),after={...f,status,report,note,submitted_by:submittedBy,submitted_manager:submittedManager,submitted_at:submittedAt,finalized_at:finalizedAt,version:f.version+1};
+  const homePlayer=f.home_player_id??managerPlayer(t.id,c.clubs.find(cl=>cl.id===f.home)?.manager),awayPlayer=f.away_player_id??managerPlayer(t.id,c.clubs.find(cl=>cl.id===f.away)?.manager);
   const changed=await db().batch([
     query("UPDATE fixtures SET status=?,report=?,note=?,submitted_by=?,submitted_manager=?,submitted_at=?,finalized_at=?,version=version+1,mutation=? WHERE id=? AND version=? AND EXISTS(SELECT 1 FROM proofs WHERE fixture_id=? AND category='final-score') AND (?<>'finalize' OR EXISTS(SELECT 1 FROM tournaments WHERE id=? AND locked_at IS NULL))",status,JSON.stringify(report),note,submittedBy,submittedManager,submittedAt,finalizedAt,operation,f.id,f.version,f.id,action,t.id),
     query('INSERT INTO audit(id,tournament_id,fixture_id,actor_id,actor_name,at,action,reason,"before","after") SELECT ?,?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM fixtures WHERE id=? AND mutation=?)',id(),t.id,f.id,user.userId,user.displayName,now(),action,reason||note||"Match report submitted.",JSON.stringify(f),JSON.stringify(after),f.id,operation),
     query("UPDATE tournaments SET revision=revision+1 WHERE id=? AND EXISTS(SELECT 1 FROM fixtures WHERE id=? AND mutation=?)",t.id,f.id,operation),
+    query("UPDATE fixtures SET home_player_id=?,away_player_id=? WHERE id=? AND mutation=? AND status='finalized'",homePlayer,awayPlayer,f.id,operation),
   ]);
   if(changed[0].meta.changes!==1)fail("The record or proof changed while you were saving. Refresh and try again.",409);
   return json({ok:true});
@@ -85,10 +94,11 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
       const choices=await all<{id:string;name:string;role:string}>("SELECT t.id,t.name,m.role FROM tournaments t JOIN members m ON m.tournament_id=t.id WHERE m.user_id=? ORDER BY t.created_at DESC",user.userId);
       const tid=url.searchParams.get("tournament")??choices[0]?.id;
       if(!tid)return json({user,tournaments:[],tournament:null,seed});
-      const member=await membership(user,tid),t=await query("SELECT * FROM tournaments WHERE id=?",tid).first<Tournament>();if(!t)fail("Tournament not found.",404);
+      let member=await membership(user,tid);const t=await query("SELECT * FROM tournaments WHERE id=?",tid).first<Tournament>();if(!t)fail("Tournament not found.",404);
+      ensurePlayers(t.owner_id);member=await membership(user,tid);
       const config=configSchema.parse(JSON.parse(t.config)),fixtures=await getFixtures(tid);
       const visibleFixtures=fixtures.map(f=>f.status==="finalized"||participant(member,f,config)?f:{...f,report:null,note:null,submitted_by:null});
-      return json({user,tournaments:choices,tournament:{...t,config,awards:t.awards?JSON.parse(t.awards):null},member,fixtures:visibleFixtures,
+      return json({user,tournaments:choices,tournament:{...t,config,awards:t.awards?JSON.parse(t.awards):null},member,fixtures:visibleFixtures,players:listPlayers(t.owner_id),rankings:communityRankings(t.owner_id),playoffs:listPlayoffs(tid),
         members:member.role==="admin"?await all<Member>("SELECT * FROM members WHERE tournament_id=?",tid):[],
         audit:member.role==="admin"?await all("SELECT * FROM audit WHERE tournament_id=? ORDER BY at DESC LIMIT 100",tid):[],
       });
@@ -123,18 +133,22 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
     }
     const tid=path[1];if(path[0]!=="tournament"||!tid)fail("Endpoint not found.",404);
     const m=await membership(user,tid),t=await query("SELECT * FROM tournaments WHERE id=?",tid).first<Tournament>();if(!t)fail("Tournament not found.",404);
+    ensurePlayers(t.owner_id);
+    Object.assign(m,await membership(user,tid));
     const c=configSchema.parse(JSON.parse(t.config));
     if(path[2]==="export"&&request.method==="GET"){
       const fs=await getFixtures(tid),kind=url.searchParams.get("kind")??"matches";
       let rows:Record<string,unknown>[];
       if(kind==="clubs")rows=standings(c,fs,"all");
+      else if(kind==='elo')rows=communityRankings(t.owner_id).map(p=>({rank:p.rank,player:p.name,elo:p.rating,ratedResults:p.played,wins:p.wins,draws:p.draws,losses:p.losses,lastChange:p.lastChange,peak:p.peak}));
+      else if(kind==='qualifiers')rows=listPlayoffs(tid).filter(p=>p.status==='complete').flatMap(p=>p.qualified.map(pid=>{const entrant=p.entrants.find(e=>e.id===pid)!;return {playoff:p.name,playerId:pid,player:entrant.name,seed:entrant.seed,eloAtDraw:entrant.rating,qualifyingPlaces:p.target};}));
       else if(kind==="managers")rows=managerRows(c,fs);
       else if(kind==="players")rows=playerRows(c,fs);
       else if(kind==="awards")rows=(t.awards?JSON.parse(t.awards):awards(c,fs)).map((a:ReturnType<typeof awards>[number])=>({award:a.name,rule:a.rule,winners:a.leaders.map(l=>l.name).join("; "),value:a.leaders[0]?.value??"",lockedAt:t.locked_at}));
       else if(kind==="audit"){admin(m);rows=await all('SELECT * FROM audit WHERE tournament_id=? ORDER BY at',tid);}
       else if(kind==="proofs"){admin(m);rows=await all("SELECT id,fixture_id,uploader,uploaded_at,category,name,mime,size FROM proofs WHERE tournament_id=?",tid);}
-      else rows=fs.filter(f=>f.status==="finalized"&&f.report).map(f=>({fixture:f.id,home:c.clubs.find(cl=>cl.id===f.home)?.name,away:c.clubs.find(cl=>cl.id===f.away)?.name,stage:f.stage,matchday:f.matchday,finalizedAt:f.finalized_at,...f.report}));
-      return new Response('\uFEFF'+csv(rows),{headers:{"Content-Type":"text/csv;charset=utf-8","Content-Disposition":`attachment; filename="matchroom-${['clubs','managers','players','awards','audit','proofs'].includes(kind)?kind:'matches'}.csv"`,"Cache-Control":"no-store"}});
+      else rows=fs.filter(f=>f.status==="finalized"&&f.report).map(f=>({fixture:f.id,home:fixtureSide(f,'home',c,listPlayers(t.owner_id)).name,away:fixtureSide(f,'away',c,listPlayers(t.owner_id)).name,stage:f.stage,matchday:f.matchday,tie:f.tie_id,leg:f.leg,finalizedAt:f.finalized_at,...f.report}));
+      return new Response('\uFEFF'+csv(rows),{headers:{"Content-Type":"text/csv;charset=utf-8","Content-Disposition":`attachment; filename="matchroom-${['elo','qualifiers','clubs','managers','players','awards','audit','proofs'].includes(kind)?kind:'matches'}.csv"`,"Cache-Control":"no-store"}});
     }
     if(path[2]==="fixture"&&path[3]){
       const raw=await query("SELECT * FROM fixtures WHERE id=? AND tournament_id=?",path[3],tid).first<Record<string,unknown>>();if(!raw)fail("Fixture not found.",404);const f=unpack(raw);requireParticipant(m,f,c);
@@ -178,6 +192,10 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
     }
     if(request.method!=="POST")fail("Endpoint not found.",404);
     admin(m);const data=await body(request);
+    if(path[2]==='players')return json(addPlayer(tid,user,data));
+    if(path[2]==='playoffs'&&!path[3])return json(createPlayoff(tid,user,data));
+    if(path[2]==='playoffs'&&path[3]&&path[4]==='advance')return json(advancePlayoff(tid,path[3],user,data));
+    if(path[2]==='invite'&&data.playerId){const authorized=authorizePlayer(tid,user,data);return json(managerInvitation(tid,authorized.email,authorized.name));}
     if(path[2]==="fixtures"){
       if(t.locked_at)fail("Unlock the awards before adding fixtures.");
       const input=z.object({home:z.string(),away:z.string(),stage:z.enum(["league","final"]),matchday:z.number().int().min(1).max(100),scheduled:z.string().datetime().nullable()}).parse(data);
@@ -211,6 +229,7 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
     if(path[2]==="awards"){
       const fs=await getFixtures(tid),reason=String(data.reason??"").trim().slice(0,2000);
       if(data.action==="lock"){
+        if(listPlayoffs(tid).some(p=>p.status==='active'))fail('Finish the active playoff before locking tournament awards.');
         if(t.locked_at)fail("Awards are already locked.");if(!fs.some(f=>f.status==="finalized"))fail("Finalize at least one match first.");
         if(fs.some(f=>f.status!=="finalized"))fail("Finalize every scheduled fixture before locking tournament awards.");
         const snapshot=awards(c,fs),at=now();
@@ -270,6 +289,7 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
     }
     fail("Endpoint not found.",404);
   }catch(error){
+    if(error instanceof CompetitionError)return json({error:error.message},error.status);
     if(error instanceof HttpError)return json({error:error.message},error.status);
     if(error instanceof z.ZodError)return json({error:error.issues.slice(0,3).map(i=>`${i.path.join(".")}: ${i.message}`).join(" · ")},400);
     if(error instanceof Error&&(/UNIQUE constraint/.test(error.message)))return json({error:"That fixture or membership already exists."},409);

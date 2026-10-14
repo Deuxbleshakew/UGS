@@ -18,6 +18,11 @@ organizer login and local run instructions. Source repository:
 - Opponent confirmation/disputes, organizer review and recorded override reasons.
 - Finalized-only standings and awards, award snapshots, review history and CSVs.
 - Organizer sign-in, invited manager accounts and expiring activation links.
+- Community player directory and lifetime Elo rankings across the organizer's tournaments.
+- Elo-seeded player playoffs for 2–128 entrants, with two legs, byes and any qualifying target.
+- Aggregate winners, penalties after a tied return leg, round advancement and qualifier CSVs.
+
+See [PLAYER-PLAYOFFS.md](docs/PLAYER-PLAYOFFS.md) for player setup, seeding and Elo rules.
 
 ## First use
 
@@ -50,7 +55,9 @@ The deployment source uses the standard Next.js dev/build/start workflow.
 
 ## Current limits
 
-No OCR, multi-leg knockout brackets, custom award formulas or live Unity sync.
+No OCR, club-based multi-round knockout brackets, custom award formulas or live Unity sync.
+The new two-leg playoffs are for human players and have their own standings;
+qualifiers are exported for main-event setup rather than automatically replacing Unity managers.
 Finalized reports cannot yet be reopened. Player names/events are manual; keep
 spelling consistent. Club badges are monograms. League ties use points, goal
 difference and goals scored, then alphabetical display order without determining

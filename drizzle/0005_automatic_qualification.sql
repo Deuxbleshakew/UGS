@@ -1,0 +1,1 @@
+ALTER TABLE `playoffs` ADD `automatic_qualifiers` text DEFAULT '[]' NOT NULL;

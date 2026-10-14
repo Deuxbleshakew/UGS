@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./competition.css";
 
 export const metadata: Metadata = {
   title: "Matchroom · Tournament HQ",

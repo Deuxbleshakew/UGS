@@ -41,7 +41,7 @@ export const reportSchema=z.object({homeScore:z.number().int().min(0).max(99),aw
   shootout:z.object({home:z.number().int().min(0).max(99),away:z.number().int().min(0).max(99)}).optional()});
 export type Report=z.infer<typeof reportSchema>;
 export type MatchEvent=z.infer<typeof eventSchema>;
-export type Fixture={id:string;tournament_id:string;home:string;away:string;stage:string;matchday:number;scheduled:string|null;status:string;report:Report|null;submitted_by:string|null;submitted_manager:string|null;submitted_at:string|null;finalized_at:string|null;note:string|null;version:number};
+export type Fixture={id:string;tournament_id:string;home:string;away:string;stage:string;matchday:number;scheduled:string|null;status:string;report:Report|null;submitted_by:string|null;submitted_manager:string|null;submitted_at:string|null;finalized_at:string|null;note:string|null;version:number;kind?:'club'|'player';home_player_id?:string|null;away_player_id?:string|null;tie_id?:string|null;leg?:number|null;playoff_round?:number|null};
 export const statusNames:Record<string,string>={scheduled:"Awaiting report",pending:"Awaiting opponent",confirmed:"Ready to finalize",disputed:"Disputed",correction:"Correction requested",finalized:"Finalized"};
 export function warnings(r:Report,f?:Pick<Fixture,'home'|'away'>):string[]{
   const issues:string[]=[];
@@ -69,13 +69,13 @@ export function validateMatchReport(r:Report,f:Fixture){
   if(r.events.some(e=>e.type==="rating"&&e.rating==null))throw new Error("Enter a value for every player rating.");
   const ratingKeys=r.events.filter(e=>e.type==="rating").map(e=>e.clubId+"/"+e.player.toLowerCase());
   if(new Set(ratingKeys).size!==ratingKeys.length)throw new Error("A player can have only one rating per match.");
-  if(r.shootout&&(f.stage!=="final"||r.homeScore!==r.awayScore||r.shootout.home===r.shootout.away))throw new Error("A shootout requires a tied final and different shootout scores.");
+  if(r.shootout&&!f.tie_id&&(f.stage!=="final"||r.homeScore!==r.awayScore||r.shootout.home===r.shootout.away))throw new Error("A shootout requires a tied final and different shootout scores.");
   if(f.stage==="final"&&r.homeScore===r.awayScore&&!r.shootout)throw new Error("Enter the shootout result for a tied final.");
 }
 export type Standing={id:string;name:string;shortName?:string;manager?:string;pot:string;played:number;wins:number;draws:number;losses:number;gf:number;ga:number;gd:number;points:number;cleanSheets:number;form:string[];stats:Record<string,{total:number;count:number}>};
 export function standings(config:Config,fixtures:Fixture[],stage="league"):Standing[]{
   const rows=new Map<string,Standing>(config.clubs.map(c=>[c.id,{...c,played:0,wins:0,draws:0,losses:0,gf:0,ga:0,gd:0,points:0,cleanSheets:0,form:[],stats:{}}]));
-  const official=fixtures.filter(f=>f.status==="finalized"&&f.report&&(stage==="all"||f.stage===stage)).sort((a,b)=>a.report!.playedAt.localeCompare(b.report!.playedAt));
+  const official=fixtures.filter(f=>f.kind!=='player'&&f.status==="finalized"&&f.report&&(stage==="all"||f.stage===stage)).sort((a,b)=>a.report!.playedAt.localeCompare(b.report!.playedAt));
   for(const f of official){const r=f.report!;
     for(const [id,score,conceded,stats] of [[f.home,r.homeScore,r.awayScore,r.home],[f.away,r.awayScore,r.homeScore,r.away]] as const){
       const row=rows.get(id);if(!row)continue;
@@ -93,7 +93,7 @@ export function managerRows(config:Config,fixtures:Fixture[]){
 }
 export function playerRows(config:Config,fixtures:Fixture[]){
   const people=new Map<string,{name:string;clubId:string;club:string;goals:number;assists:number;rating:number;ratings:number;matches:Set<string>}>();
-  for(const f of fixtures.filter(f=>f.status==="finalized"&&f.report))for(const e of f.report!.events){
+  for(const f of fixtures.filter(f=>f.kind!=='player'&&f.status==="finalized"&&f.report))for(const e of f.report!.events){
     const key=e.clubId+"/"+e.player.toLowerCase();const p=people.get(key)??{name:e.player,clubId:e.clubId,club:config.clubs.find(c=>c.id===e.clubId)?.name??e.clubId,goals:0,assists:0,rating:0,ratings:0,matches:new Set<string>()};
     if(["goal","penalty-goal"].includes(e.type))p.goals++;if(e.type==="assist")p.assists++;if(e.type==="rating"&&e.rating!=null){p.rating+=e.rating;p.ratings++;}p.matches.add(f.id);people.set(key,p);
   }

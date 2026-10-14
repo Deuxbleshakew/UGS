@@ -1,6 +1,6 @@
 "use client";
 import {useState,useEffect} from "react";
-import {Activity,ArrowDownToLine,ArrowRight,ArrowUpRight,CalendarDays,CheckCircle2,ChevronDown,ChevronRight,FileCheck2,LayoutDashboard,Loader2,LockKeyhole,Menu,Plus,Settings2,Shield,ShieldCheck,Sparkles,Trophy,Users,X,AlertCircle,LogOut,BarChart3} from "lucide-react";
+import {Activity,ArrowDownToLine,ArrowRight,ArrowUpRight,CalendarDays,CheckCircle2,ChevronDown,ChevronRight,FileCheck2,LayoutDashboard,Loader2,LockKeyhole,Menu,Plus,Settings2,Shield,ShieldCheck,Sparkles,Trophy,Users,X,AlertCircle,LogOut,BarChart3,GitBranch,TrendingUp} from "lucide-react";
 import {type Config,type Fixture} from "@/lib/domain";
 import initialConfig from "@/data/draw-config.json";
 import {api,Modal,type AppState} from "./ui";
@@ -8,8 +8,8 @@ import Views from "./views";
 import MatchReport from "./match-report";
 import WorkspaceDialog from "./workspace-dialog";
 
-const nav=[{id:"overview",label:"Overview",icon:LayoutDashboard},{id:"fixtures",label:"Fixtures & results",icon:CalendarDays},{id:"standings",label:"League table",icon:BarChart3},{id:"clubs",label:"Clubs & managers",icon:Users},{id:"statistics",label:"Statistics",icon:Activity},{id:"awards",label:"Awards",icon:Trophy},{id:"review",label:"Review queue",icon:FileCheck2},{id:"settings",label:"Tournament setup",icon:Settings2}];
-const subtitles:Record<string,string>={overview:"Every club. Every result. Your season in one place.",fixtures:"From the first whistle to the final, keep every match on track.",standings:"The league, as it stands. Only finalized results count.",clubs:"The clubs on the pitch. The managers behind them.",statistics:"The numbers behind your tournament, backed by verified results.",awards:"Great performances deserve their moment.",review:"Turn submitted match reports into official results.",settings:"Set up your season and connect your Unity draw."};
+const nav=[{id:"overview",label:"Overview",icon:LayoutDashboard},{id:"fixtures",label:"Fixtures & results",icon:CalendarDays},{id:"elo",label:"Player Elo",icon:TrendingUp},{id:"playoffs",label:"Playoffs",icon:GitBranch},{id:"standings",label:"League table",icon:BarChart3},{id:"clubs",label:"Clubs & managers",icon:Users},{id:"statistics",label:"Statistics",icon:Activity},{id:"awards",label:"Awards",icon:Trophy},{id:"review",label:"Review queue",icon:FileCheck2},{id:"settings",label:"Tournament setup",icon:Settings2}];
+const subtitles:Record<string,string>={overview:"Every club. Every result. Your season in one place.",fixtures:"From the first whistle to the final, keep every match on track.",elo:"Your community’s player rankings, built from finalized results.",playoffs:"Elo-seeded home-and-away ties, from qualification to the final.",standings:"The league, as it stands. Only finalized results count.",clubs:"The clubs on the pitch. The managers behind them.",statistics:"The numbers behind your tournament, backed by verified results.",awards:"Great performances deserve their moment.",review:"Turn submitted match reports into official results.",settings:"Manage player access, your season and the Unity draw."};
 
 export default function TournamentApp(){
   const [state,setState]=useState<AppState|null>(null),[view,setView]=useState('overview'),[loading,setLoading]=useState(true),[error,setError]=useState(''),[toast,setToast]=useState(''),[mobile,setMobile]=useState(false);
@@ -22,13 +22,13 @@ export default function TournamentApp(){
   function navigate(next:string){setView(next);setMobile(false);}
   function open(type:string){if(ready&&!admin){setToast('Only the organizer can change tournament setup.');return;}setModal(ready?type:'create');}
   function openMatch(f:Fixture){
-    const canSee=admin||f.status==='finalized'||config.clubs.some(c=>[f.home,f.away].includes(c.id)&&c.manager===state?.member?.manager_id);
+    const canSee=admin||f.status==='finalized'||(f.kind==='player'?!!state?.member?.player_id&&[f.home,f.away].includes(state.member.player_id):config.clubs.some(c=>[f.home,f.away].includes(c.id)&&c.manager===state?.member?.manager_id));
     if(!canSee){setToast('This report is private to its participants until finalized.');return;}
     setSelected(f);setModal('match');
   }
   const close=()=>setModal(null);
   async function saved(tid?:string){await refresh(tid??tournament?.id);setModal(null);setToast('Saved to your tournament workspace.');}
-  function download(kind:string){if(tournament)window.location.href=`/api/tournament/${tournament.id}/export?kind=${kind}`;}
+  function download(kind:string){if(tournament)window.location.href=`/api/tournament/${tournament.id}/export?kind=${encodeURIComponent(view==='elo'&&kind==='matches'?'elo':kind)}`;}
   return <div className="app-shell">
     <aside className={`sidebar ${mobile?'is-open':''}`}>
       <a className="brand" href="#" onClick={e=>{e.preventDefault();navigate('overview');}}><span className="brand-icon"><Trophy size={23}/></span>matchroom<span className="brand-dot">.</span></a>
@@ -48,7 +48,7 @@ export default function TournamentApp(){
     </main></div>
     {toast&&<div className="toast" role="status"><CheckCircle2 size={18}/>{toast}<button className="icon-btn" aria-label="Dismiss message" onClick={()=>setToast('')}><X size={16}/></button></div>}
     {modal==='switch'&&<Modal title="Your tournaments" onClose={close}><div className="modal-body">{state?.tournaments.map(t=><button className="switch-row" key={t.id} onClick={()=>saved(t.id).catch(e=>setError(e.message))}><Shield size={21}/>{t.name}<ChevronRight size={18}/></button>)}{state?.user.isOwner&&<button className="btn secondary full" onClick={()=>setModal('create')}><Plus size={17}/>New tournament</button>}</div></Modal>}
-    {modal==='match'&&selected&&tournament&&state?.member&&<MatchReport fixture={selected} config={config} tournamentId={tournament.id} user={state.user} member={state.member} onClose={close} onSaved={()=>saved()}/>}
+    {modal==='match'&&selected&&tournament&&state?.member&&<MatchReport fixture={selected} config={config} players={state.players} fixtures={fixtures} tournamentId={tournament.id} user={state.user} member={state.member} onClose={close} onSaved={()=>saved()}/>}
     {modal&&['create','fixture','import','awards-lock'].includes(modal)&&<WorkspaceDialog type={modal} config={config} tournament={tournament??null} onClose={close} onSaved={saved}/>}
   </div>;
 }

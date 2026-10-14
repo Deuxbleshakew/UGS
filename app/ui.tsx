@@ -2,10 +2,11 @@
 import {useEffect,useRef,type ReactNode,type CSSProperties} from "react";
 import {Shield,ClipboardList,X,ChevronRight} from "lucide-react";
 import {statusNames,type Config,type Fixture,type awards} from "@/lib/domain";
+import {fixtureSide,stageLabel,type CommunityPlayer,type EloRow,type Playoff} from '@/lib/competition';
 export type User={userId:string;displayName:string;email:string;isOwner:boolean};
-export type Member={id:string;user_id:string|null;email:string;name:string;role:string;manager_id:string|null};
+export type Member={id:string;user_id:string|null;email:string;name:string;role:string;manager_id:string|null;player_id?:string|null};
 export type Audit={id:string;actor_name:string;at:string;action:string;reason:string;before:string;after:string};
-export type AppState={user:User;tournaments:{id:string;name:string;role:string}[];tournament:null|{id:string;name:string;config:Config;locked_at:string|null;awards:ReturnType<typeof awards>|null};member?:Member;fixtures?:Fixture[];members?:Member[];audit?:Audit[]};
+export type AppState={user:User;tournaments:{id:string;name:string;role:string}[];tournament:null|{id:string;name:string;config:Config;locked_at:string|null;awards:ReturnType<typeof awards>|null};member?:Member;fixtures?:Fixture[];members?:Member[];audit?:Audit[];players?:CommunityPlayer[];rankings?:EloRow[];playoffs?:Playoff[]};
 export const colors=["#283c8b","#e54d54","#39726b","#bd8a28","#7256aa","#3b71a9"];
 export function Crest({club,small=false}:{club?:{id:string;name:string;shortName?:string};small?:boolean}){
   const hash=[...(club?.id??"")].reduce((a,b)=>a+b.charCodeAt(0),0);
@@ -34,7 +35,6 @@ export function Modal({title,subtitle,onClose,wide=false,children}:{title:string
   },[]);
   return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose();}}><div ref={box} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title} className={`modal ${wide?"wide":""}`}><header><div><h2>{title}</h2>{subtitle&&<p>{subtitle}</p>}</div><button className="icon-btn" onClick={onClose} aria-label="Close dialog"><X/></button></header>{children}</div></div>;
 }
-export function FixtureList({rows,config,onOpen,compact=false}:{rows:Fixture[];config:Config;onOpen:(f:Fixture)=>void;compact?:boolean}){
-  const club=(id:string)=>config.clubs.find(c=>c.id===id);
-  return rows.length?<div className={`fixture-list ${compact?'compact':''}`}>{rows.map(f=><button key={f.id} className="fixture-row" onClick={()=>onOpen(f)}><div className="match-meta"><span>{f.stage==='final'?'FINAL':'LEAGUE PHASE'}</span><small>{fmt(f.scheduled)}</small></div><div className="match-teams"><span><Crest club={club(f.home)} small/>{club(f.home)?.name}</span><strong className={f.status==='finalized'?'score official':'score'}>{f.report?`${f.report.homeScore} : ${f.report.awayScore}`:'vs'}</strong><span><Crest club={club(f.away)} small/>{club(f.away)?.name}</span></div><Status status={f.status}/><ChevronRight size={17}/></button>)}</div>:<Empty title="The fixture list is waiting" description="Import the league draw from Unity, or schedule your first fixture using Add fixture."/>;
+export function FixtureList({rows,config,players=[],onOpen,compact=false}:{rows:Fixture[];config:Config;players?:CommunityPlayer[];onOpen:(f:Fixture)=>void;compact?:boolean}){
+  return rows.length?<div className={`fixture-list ${compact?'compact':''}`}>{rows.map(f=>{const home=fixtureSide(f,'home',config,players),away=fixtureSide(f,'away',config,players);return <button key={f.id} className="fixture-row" onClick={()=>onOpen(f)}><div className="match-meta"><span>{stageLabel(f)}</span><small>{fmt(f.scheduled)}</small></div><div className="match-teams"><span><Crest club={home} small/>{home.name}</span><strong className={f.status==='finalized'?'score official':'score'}>{f.report?`${f.report.homeScore} : ${f.report.awayScore}`:'vs'}</strong><span><Crest club={away} small/>{away.name}</span></div><Status status={f.status}/><ChevronRight size={17}/></button>;})}</div>:<Empty title="The fixture list is waiting" description="Import the league draw, create player playoffs, or schedule your first fixture."/>;
 }
