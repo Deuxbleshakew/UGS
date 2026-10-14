@@ -4,7 +4,7 @@ import { sql } from 'drizzle-orm';
 export const accounts=sqliteTable('accounts',{
   id:text('id').primaryKey(),email:text('email').notNull(),name:text('name').notNull(),
   passwordHash:text('password_hash').notNull(),owner:integer('owner').notNull().default(0),createdAt:text('created_at').notNull(),
-},t=>[uniqueIndex('account_email').on(t.email)]);
+},t=>[uniqueIndex('account_email').on(t.email),uniqueIndex('account_single_owner').on(t.owner).where(sql`${t.owner} = 1`)]);
 export const sessions=sqliteTable('sessions',{
   tokenHash:text('token_hash').primaryKey(),accountId:text('account_id').notNull().references(()=>accounts.id),expiresAt:integer('expires_at').notNull(),
 },t=>[index('session_account').on(t.accountId)]);

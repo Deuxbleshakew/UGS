@@ -17,7 +17,7 @@ organizer login and local run instructions. Source repository:
 - Multiple private screenshot originals, previews and protected evidence gallery.
 - Opponent confirmation/disputes, organizer review and recorded override reasons.
 - Finalized-only standings and awards, award snapshots, review history and CSVs.
-- Organizer sign-in, invited manager accounts and expiring activation links.
+- One owner/admin account, owner-only user creation and expiring player activation links.
 - Community player directory and lifetime Elo rankings across the organizer's tournaments.
 - Elo-seeded player playoffs for 2–128 entrants, with two legs, byes and any qualifying target.
 - Aggregate winners, penalties after a tied return leg, round advancement and qualifier CSVs.
@@ -31,7 +31,7 @@ See [PLAYER-PLAYOFFS.md](docs/PLAYER-PLAYOFFS.md) for player setup, seeding and 
 3. Import the completed league draw, or schedule matches manually.
 4. Open each imported fixture to assign a matchday and optional date. Unity
    pairings contain no calendar and initially use matchday 1.
-5. Authorize managers' emails and share the generated activation links privately.
+5. Open Tournament setup → Users & access. Create a user with a display name and email, or choose an existing player. Share their private activation link so they can set their own password.
 6. Participants submit score proof, opponents confirm/dispute, and the organizer
    finalizes. Only finalized records count toward official statistics.
 
@@ -43,6 +43,7 @@ files, including Claude's engine, have not been modified.
 
 - `app/tournament-app.tsx`, `views.tsx`, `setup.tsx`: dashboard and navigation.
 - `app/match-report.tsx`, `workspace-dialog.tsx`, `ui.tsx`: reporting, evidence and scheduling.
+- `app/user-access.tsx`: owner-only account creation, activation links and player access.
 - `app/sign-in.tsx`, `lib/auth.ts`: login, invitation activation and sessions.
 - `lib/server.ts`, `lib/domain.ts`: authorization, reviews, imports and calculations.
 - `lib/storage.ts`, `scripts/local-store.mjs`: SQLite transactions and private files.
@@ -50,6 +51,8 @@ files, including Claude's engine, have not been modified.
 - `db/schema.ts`, `drizzle/`: database schema and versioned migrations.
 - `data/draw-config.json`: starting club configuration.
 - `.env.example`, `.node-version`, `render.yaml`: Render settings (no secrets).
+
+Only the owner account can administer its tournaments, regardless of a saved membership role. A database constraint allows only one owner account. Other accounts are players; there is no public registration or promotion endpoint.
 
 The deployment source uses the standard Next.js dev/build/start workflow.
 

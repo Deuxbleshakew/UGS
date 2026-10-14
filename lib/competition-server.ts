@@ -87,8 +87,13 @@ export function addPlayer(tid:string,user:Actor,input:unknown){
 
 export function authorizePlayer(tid:string,user:Actor,input:unknown){
   const data=z.object({playerId:z.string().min(1),email:z.string().trim().email().max(254).transform(s=>s.toLowerCase())}).parse(input);
-  return atomic(()=>{
+  return atomic(()=>authorizePlayerRecord(tid,user,data));
+}
+
+// Both entry points keep the player identity and membership in one transaction.
+function authorizePlayerRecord(tid:string,user:Actor,data:{playerId:string;email:string}){
     const t=tournament(tid),player=one<CommunityPlayer>('SELECT id,name,created_at FROM community_players WHERE id=? AND owner_id=?',data.playerId,t.owner_id);
+    if(t.owner_id!==user.userId||!one('SELECT id FROM accounts WHERE id=? AND owner=1',user.userId))fail('Only the owner can create or authorize users.',403);
     if(!player)fail('Choose a player from your community.');
     const sameEmail=one<{player_id:string|null;manager_id:string|null}>('SELECT player_id,manager_id FROM members WHERE tournament_id=? AND email=?',tid,data.email);
     const existing=one<{email:string}>('SELECT email FROM members WHERE tournament_id=? AND player_id=?',tid,player.id);
@@ -100,6 +105,19 @@ export function authorizePlayer(tid:string,user:Actor,input:unknown){
     if(!existing)db().prepare("INSERT INTO members(id,tournament_id,email,name,role,manager_id,player_id) VALUES(?,?,?,?,'manager',?,?)").run(id(),tid,data.email,player.name,linked?.manager_id??null,player.id);
     audit(tid,user,'authorize-player',null,{playerId:player.id,existingMembership:!!existing});
     return {email:data.email,name:player.name};
+}
+
+export function createPlayerUser(tid:string,user:Actor,input:unknown){
+  const data=z.object({name:z.string().trim().min(1).max(80),email:z.string().trim().email().max(254).transform(s=>s.toLowerCase())}).parse(input);
+  return atomic(()=>{
+    const t=unlocked(tid);
+    if(t.owner_id!==user.userId||!one('SELECT id FROM accounts WHERE id=? AND owner=1',user.userId))fail('Only the owner can create users.',403);
+    if(one('SELECT id FROM community_players WHERE owner_id=? AND name=? COLLATE NOCASE',t.owner_id,data.name))fail('This player already exists. Choose their existing player profile below.',409);
+    const playerId=id();
+    db().prepare('INSERT INTO community_players(id,owner_id,name,created_at) VALUES(?,?,?,?)').run(playerId,t.owner_id,data.name,now());
+    const result=authorizePlayerRecord(tid,user,{playerId,email:data.email});
+    audit(tid,user,'create-player-user',null,{playerId,name:data.name,role:'manager'});
+    return result;
   });
 }
 

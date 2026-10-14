@@ -3,7 +3,7 @@
 ## Organizer workflow
 
 1. Open a tournament, then **Player Elo**. Existing configured managers join the community directory automatically. Add everyone else by display name; no club assignment is required.
-2. Use **Tournament setup → Player access** to authorize their email and copy the private activation link. No email is sent by the app.
+2. Use **Tournament setup → Users & access** to authorize their email and copy the private activation link. You can also create a new player and reserve their account together in this form. No email is sent by the app.
 3. Open **Playoffs → Create playoff**. Select 2–128 entrants and a qualifying target. The default is 12 main-event places: the top 5 Elo seeds qualify directly, and everyone else enters the playoff for the other 7 places. Automatic places are configurable; use 0 and a target of 1 for an outright champion.
 4. Elo updates after every finalized match by default, as requested. A per-tie option remains available for other competitions. This choice is saved with the playoff.
 5. Review seeds, byes and home/away pairings. Equal Elo is resolved by a reproducible draw; redraw it before creation if needed. Click **Create these fixtures** to commit that preview.

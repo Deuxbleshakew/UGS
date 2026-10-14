@@ -3,7 +3,7 @@ import { getCurrentUser, sameOrigin, managerInvitation, type CurrentUser } from 
 import seed from "@/data/draw-config.json";
 import { configSchema, reportSchema, validateMatchReport, warnings, standings, managerRows, playerRows, awards, csv, type Config, type Fixture } from "./domain";
 import { z } from "zod";
-import { ensurePlayers, listPlayers, communityRankings, listPlayoffs, managerPlayer, addPlayer, authorizePlayer, createPlayoff, advancePlayoff, CompetitionError } from './competition-server';
+import { ensurePlayers, listPlayers, communityRankings, listPlayoffs, managerPlayer, addPlayer, authorizePlayer, createPlayerUser, createPlayoff, advancePlayoff, CompetitionError } from './competition-server';
 import { checkPlayoffReport, fixtureSide } from './competition';
 
 type Member={id:string;tournament_id:string;user_id:string|null;email:string;name:string;role:string;manager_id:string|null;player_id:string|null};
@@ -17,8 +17,11 @@ async function all<T>(sql:string,...args:unknown[]){return (await query(sql,...a
 function unpack(row:Record<string,unknown>):Fixture{return {...row,report:row.report?JSON.parse(String(row.report)):null} as Fixture;}
 async function getFixtures(tid:string){return (await all<Record<string,unknown>>("SELECT * FROM fixtures WHERE tournament_id=? ORDER BY matchday,scheduled,id",tid)).map(unpack);}
 async function membership(user:CurrentUser,tid:string){
-  const m=await query("SELECT * FROM members WHERE tournament_id=? AND user_id=?",tid,user.userId).first<Member>();
-  if(!m)fail("You do not have access to this tournament.",403);return m;
+  const row=await query("SELECT m.*,t.owner_id AS tournament_owner FROM members m JOIN tournaments t ON t.id=m.tournament_id WHERE m.tournament_id=? AND m.user_id=?",tid,user.userId).first<Member&{tournament_owner:string}>();
+  if(!row)fail("You do not have access to this tournament.",403);
+  const {tournament_owner,...m}=row;
+  // A saved membership role never grants admin authority to another account.
+  return {...m,role:user.isOwner&&tournament_owner===user.userId?'admin':'manager'};
 }
 const admin=(m:Member)=>{if(m.role!=="admin")fail("Only the organizer can do that.",403);};
 function participant(m:Member,f:Fixture,c:Config){return m.role==="admin"||(f.kind==='player'?!!m.player_id&&[f.home,f.away].includes(m.player_id):c.clubs.some(club=>[f.home,f.away].includes(club.id)&&club.manager===m.manager_id));}
@@ -91,7 +94,7 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
     await query("UPDATE members SET user_id=? WHERE email=? AND user_id IS NULL",user.userId,user.email.toLowerCase()).run();
     const url=new URL(request.url);
     if(path[0]==="state"&&request.method==="GET"){
-      const choices=await all<{id:string;name:string;role:string}>("SELECT t.id,t.name,m.role FROM tournaments t JOIN members m ON m.tournament_id=t.id WHERE m.user_id=? ORDER BY t.created_at DESC",user.userId);
+      const choices=await all<{id:string;name:string;role:string}>("SELECT t.id,t.name,CASE WHEN a.owner=1 AND t.owner_id=m.user_id THEN 'admin' ELSE 'manager' END AS role FROM tournaments t JOIN members m ON m.tournament_id=t.id JOIN accounts a ON a.id=m.user_id WHERE m.user_id=? ORDER BY t.created_at DESC",user.userId);
       const tid=url.searchParams.get("tournament")??choices[0]?.id;
       if(!tid)return json({user,tournaments:[],tournament:null,seed});
       let member=await membership(user,tid);const t=await query("SELECT * FROM tournaments WHERE id=?",tid).first<Tournament>();if(!t)fail("Tournament not found.",404);
@@ -99,7 +102,7 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
       const config=configSchema.parse(JSON.parse(t.config)),fixtures=await getFixtures(tid);
       const visibleFixtures=fixtures.map(f=>f.status==="finalized"||participant(member,f,config)?f:{...f,report:null,note:null,submitted_by:null});
       return json({user,tournaments:choices,tournament:{...t,config,awards:t.awards?JSON.parse(t.awards):null},member,fixtures:visibleFixtures,players:listPlayers(t.owner_id),rankings:communityRankings(t.owner_id),playoffs:listPlayoffs(tid),
-        members:member.role==="admin"?await all<Member>("SELECT * FROM members WHERE tournament_id=?",tid):[],
+        members:member.role==="admin"?(await all<Member>("SELECT * FROM members WHERE tournament_id=?",tid)).map(m=>({...m,role:m.user_id===t.owner_id?'admin':'manager'})):[],
         audit:member.role==="admin"?await all("SELECT * FROM audit WHERE tournament_id=? ORDER BY at DESC LIMIT 100",tid):[],
       });
     }
@@ -192,6 +195,7 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
     }
     if(request.method!=="POST")fail("Endpoint not found.",404);
     admin(m);const data=await body(request);
+    if(path[2]==='users'){const authorized=createPlayerUser(tid,user,data);return json(managerInvitation(tid,authorized.email,authorized.name));}
     if(path[2]==='players')return json(addPlayer(tid,user,data));
     if(path[2]==='playoffs'&&!path[3])return json(createPlayoff(tid,user,data));
     if(path[2]==='playoffs'&&path[3]&&path[4]==='advance')return json(advancePlayoff(tid,path[3],user,data));

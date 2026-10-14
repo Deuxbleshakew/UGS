@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `account_single_owner` ON `accounts` (`owner`) WHERE "accounts"."owner" = 1;
