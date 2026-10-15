@@ -13,7 +13,6 @@ function Destination({view, title, description}: {view: UgsView; title: string; 
 
 const plannedCopy: Partial<Record<UgsView, {title: string; description: string}>> = {
   guide: {title: 'A shared guide to the competition.', description: 'Published rules, match guides and acknowledgments will live here. The owner has not published a rules guide in this section yet.'},
-  friendlies: {title: 'More ways to play together.', description: 'Friendly requests and match conversations are planned. You cannot arrange a friendly through this section yet.'},
   history: {title: 'Our moments, kept together.', description: 'Published season recaps, ceremonies and highlights will live here. No history entries have been published in this section yet.'},
   profile: {title: 'Your place in Union Gaming.', description: 'Profile editing, gaming IDs and favorite teams are planned. Your current account and sign-in remain available as before.'},
 };
@@ -47,7 +46,7 @@ export default function UgsSections({view, state, onNavigate, onDialog}: Props) 
     <section className="ugs-competition-banner"><div><span className="eyebrow">A UGS COMPETITION</span><h2>Club Champions</h2><p>Qualification, fixtures, standings and the performances behind every result.</p><a className="btn ugs-white-button" href={viewHref('overview')}>Open competition <ArrowRight size={17} /></a></div><Trophy size={105} strokeWidth={1} aria-hidden="true" /></section>
     <div className="ugs-context-strip"><span>Selected tournament</span><strong>{state?.tournament?.name ?? 'No tournament available'}</strong>{!!state?.tournaments.length && <button className="text-btn" onClick={() => onDialog('switch')}>Switch tournament <ArrowRight size={15} /></button>}</div>
     <div className="ugs-destination-grid"><Destination view="playoffs" title="Qualification" description="Follow the seeded player playoffs and direct places." /><Destination view="fixtures" title="Fixtures & results" description="Open the match workspace to schedule or report a result." /><Destination view="elo" title="Players & Elo" description="See community player rankings and recent form." /><Destination view="standings" title="League table" description="Follow finalized club results in the current tournament." /></div>
-    <section className="panel ugs-planned-strip"><h2>Coming to Matchroom</h2><p>These sections are planned and not available for use yet.</p><div>{(['friendlies', 'history', 'guide'] as const).map(key => <a key={key} href={viewHref(key)}>{ugsViews[key].label}<span className="ugs-planned-label">Planned</span><ArrowRight size={16} /></a>)}</div></section>
+    <section className="panel ugs-planned-strip"><h2>Coming to Matchroom</h2><p>These sections are planned and not available for use yet.</p><div>{(['history', 'guide'] as const).map(key => <a key={key} href={viewHref(key)}>{ugsViews[key].label}<span className="ugs-planned-label">Planned</span><ArrowRight size={16} /></a>)}</div></section>
   </>;
 
   if (view === 'tiquicia') return <>

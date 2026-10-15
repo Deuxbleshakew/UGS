@@ -133,3 +133,31 @@ export const scheduleEvents = sqliteTable("schedule_events", {
   actorId: text("actor_id"), actorName: text("actor_name").notNull(), at: text("at").notNull(), action: text("action").notNull(),
   reason: text("reason"), kickoffBefore: text("kickoff_before"), kickoffAfter: text("kickoff_after"), proposedAt: text("proposed_at"),
 });
+
+// Milestone: friendly invitations (migration 0012). Documentation mirror; the runtime uses the SQL migration.
+export const friendlyInvitations = sqliteTable("friendly_invitations", {
+  id: text("id").primaryKey(), inviterId: text("inviter_id").notNull().references(() => accounts.id), inviteeId: text("invitee_id").notNull().references(() => accounts.id),
+  pairKey: text("pair_key").notNull(), status: text("status").notNull(),
+  proposedAt: text("proposed_at").notNull(), proposedLocal: text("proposed_local").notNull(), proposerTimezone: text("proposer_timezone").notNull(),
+  proposedBy: text("proposed_by").notNull().references(() => accounts.id), turnId: text("turn_id").references(() => accounts.id),
+  message: text("message"), createdAt: text("created_at").notNull(), updatedAt: text("updated_at").notNull(), version: integer("version").notNull().default(1),
+});
+export const friendlyEvents = sqliteTable("friendly_events", {
+  id: text("id").primaryKey(), invitationId: text("invitation_id").notNull().references(() => friendlyInvitations.id),
+  actorId: text("actor_id"), actorName: text("actor_name").notNull(), at: text("at").notNull(), action: text("action").notNull(),
+  reason: text("reason"), proposedAt: text("proposed_at"),
+});
+
+// Milestone: profile pictures (migration 0013). Documentation mirror; the runtime uses the SQL migration.
+export const accountAvatars = sqliteTable("account_avatars", {
+  accountId: text("account_id").primaryKey().references(() => accounts.id),
+  mime: text("mime").notNull(), data: text("data").notNull(), width: integer("width").notNull(), height: integer("height").notNull(),
+  version: integer("version").notNull().default(1), updatedAt: text("updated_at").notNull(),
+});
+
+// Milestone: user management (migration 0014). Documentation mirror; the runtime uses the SQL migration.
+export const accountStatus = sqliteTable("account_status", {
+  accountId: text("account_id").primaryKey().references(() => accounts.id),
+  disabledAt: text("disabled_at").notNull(), reason: text("reason").notNull(),
+  disabledBy: text("disabled_by").notNull().references(() => accounts.id),
+});

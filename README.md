@@ -27,6 +27,10 @@ deployed. See [Discord handoff](docs/CLAUDE-DISCORD-HANDOFF.md).
 
 Local Milestone 3B adds match scheduling and rescheduling: kickoff proposals, opponent accept/decline/counter, timezone-aware times, manager-clash prevention, and owner approval for kickoffs beyond the deadline. See `docs/CLAUDE-SCHEDULING-HANDOFF.md`.
 
+Local Milestone 4B adds friendly invitations (invite, accept, decline, counter-propose, cancel, history). Friendlies never affect Elo, standings or awards; chat comes later. See `docs/CLAUDE-FRIENDLIES-HANDOFF.md`.
+
+Local Milestone 4C adds optional profile pictures (cropped in the browser, validated again on the server, stored in the database). See `docs/CLAUDE-AVATAR-HANDOFF.md`.
+
 Milestone 2A (deployed on 2026-10-14) adds owner-assigned usernames
 and private activation with optional email. See
 [username access](docs/MILESTONE-2A-USERNAME-ACCESS.md) for migration details and
@@ -94,3 +98,5 @@ membership revocation screens remain to be built.
 The production build and TypeScript compilation passed on Render. The deployed
 health endpoint returned HTTP 200 with `status: ok`, and the sign-in page loads.
 No functional tests were run, per your instruction.
+
+**Milestone 4D — user management and change password (migration 0014).** The owner can disable and re-enable accounts (reason and confirmation required; the owner account cannot be disabled) and remove a person from one tournament. Disabling signs the person out everywhere, unlinks Discord, deletes their profile picture, closes their open friendlies and withdraws their waiting kickoff proposals; results, Elo, fixtures, memberships and history are untouched. Removing a member deletes only their access to that tournament and keeps a snapshot in the audit log. Every signed-in user can change their own password in My Profile (current password required, rate limited, other devices signed out).

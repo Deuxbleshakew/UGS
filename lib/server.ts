@@ -1,5 +1,5 @@
 import { store, proofStore } from "./storage";
-import { getCurrentUser, sameOrigin, type CurrentUser } from "./auth";
+import { getCurrentUser, sameOrigin, changePassword, type CurrentUser } from "./auth";
 import seed from "@/data/draw-config.json";
 import { configSchema, reportSchema, validateMatchReport, warnings, standings, managerRows, playerRows, awards, csv, type Config, type Fixture } from "./domain";
 import { z } from "zod";
@@ -10,6 +10,9 @@ import {tournamentRole} from './access-policy';
 import {getProfile,saveProfile} from './profile-server';
 import {getMatchweeks,changeMatchweeks,requireOpenMatchweek} from './matchweeks-server';
 import {getSchedule,scheduleAction,scheduleAdmin} from './scheduling-server';
+import {getFriendlies,friendlyAction} from './friendlies-server';
+import {getAvatar,avatarInfo,saveAvatar,removeAvatar,AVATAR_UPLOAD_LIMIT} from './avatar-server';
+import {disableAccount,enableAccount,removeMember} from './user-management';
 
 type Member={id:string;tournament_id:string;user_id:string|null;email:string;username:string|null;name:string;role:string;manager_id:string|null;player_id:string|null};
 type Tournament={id:string;name:string;owner_id:string;config:string;created_at:string;awards:string|null;locked_at:string|null;revision:number};
@@ -104,10 +107,44 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
       if(request.method==='POST')return json(saveProfile(user,await body(request)));
       fail('Method not allowed.',405);
     }
+    if(path[0]==='account'&&path[1]==='password'&&path.length===2){
+      if(request.method!=='POST')fail('Method not allowed.',405);
+      return json(await changePassword(user,await body(request)));
+    }
+    if(path[0]==='avatar'){
+      if(path.length===2&&request.method==='GET'){
+        const a=getAvatar(path[1]);if(!a)fail('No picture.',404);
+        const etag=`"${a.version}-${a.size}"`,headers={ETag:etag,'Cache-Control':'private, no-cache','X-Content-Type-Options':'nosniff','Cross-Origin-Resource-Policy':'same-origin'};
+        if(request.headers.get('if-none-match')===etag)return new Response(null,{status:304,headers});
+        return new Response(new Uint8Array(a.data),{headers:{...headers,'Content-Type':a.mime,'Content-Length':String(a.size),'Content-Disposition':'inline','Content-Security-Policy':"default-src 'none'"}});
+      }
+      if(path.length===1&&request.method==='GET')return json(avatarInfo(user.userId));
+      if(path.length===1&&request.method==='POST'){
+        const buffered=await bytes(request,AVATAR_UPLOAD_LIMIT+65536);
+        const form=await new Request(request.url,{method:'POST',headers:request.headers,body:buffered}).formData().catch(()=>fail('Send the picture as a file.'));
+        const file=form.get('file');if(!(file instanceof File)||file.size<64||file.size>AVATAR_UPLOAD_LIMIT)fail('Choose a JPEG, PNG or WebP picture up to 1 MB.');
+        return json(saveAvatar(user.userId,new Uint8Array(await file.arrayBuffer())));
+      }
+      if(path.length===1&&request.method==='DELETE')return json(removeAvatar(user.userId));
+      fail('Method not allowed.',405);
+    }
     const profile=getProfile(user),onboardingRequired=!user.isOwner&&!profile.complete;
     if(onboardingRequired){
       if(path.length===1&&path[0]==='state'&&request.method==='GET')return json({user,profile,onboardingRequired:true,tournaments:[],tournament:null});
       fail('Complete your profile before using tournament workflows.',403);
+    }
+    if(path[0]==='accounts'&&path.length===2&&['disable','enable'].includes(path[1])){
+      if(request.method!=='POST')fail('Method not allowed.',405);
+      const input=await body(request);return json(path[1]==='disable'?disableAccount(user,input):enableAccount(user,input));
+    }
+    if(path[0]==='tournament'&&path[2]==='members'&&path[3]==='remove'&&path.length===4){
+      if(request.method!=='POST')fail('Method not allowed.',405);
+      return json(removeMember(path[1],user,await body(request)));
+    }
+    if(path.length===1&&path[0]==='friendlies'){
+      if(request.method==='GET')return json(getFriendlies(user));
+      if(request.method==='POST')return json(friendlyAction(user,await body(request)));
+      fail('Method not allowed.',405);
     }
     if(path[0]==="state"&&request.method==="GET"){
       const choices=await all<{id:string;name:string;role:string}>("SELECT t.id,t.name,CASE WHEN a.owner=1 AND t.owner_id=m.user_id THEN 'admin' WHEN m.role IN ('manager','participant') THEN 'manager' ELSE 'viewer' END AS role FROM tournaments t JOIN members m ON m.tournament_id=t.id JOIN accounts a ON a.id=m.user_id WHERE m.user_id=? ORDER BY t.created_at DESC",user.userId);

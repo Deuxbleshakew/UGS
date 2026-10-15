@@ -22,7 +22,7 @@ export const ugsViews: Record<UgsView, ViewDefinition> = {
   statistics: {label: 'Statistics', path: 'matchroom/club-champions/statistics', description: 'Club, manager and footballer performances from finalized results.', section: 'matchroom'},
   awards: {label: 'Awards', path: 'matchroom/club-champions/awards', description: 'The honours earned in your selected tournament.', section: 'matchroom'},
   elo: {label: 'Players', path: 'matchroom/players', description: 'Human-player Elo rankings across the organizer’s tournaments.', section: 'matchroom'},
-  friendlies: {label: 'Friendlies', path: 'matchroom/friendlies', description: 'A future home for arranging community matches.', section: 'matchroom', planned: true},
+  friendlies: {label: 'Friendlies', path: 'matchroom/friendlies', description: 'Invite another player to a casual match.', section: 'matchroom'},
   history: {label: 'History', path: 'matchroom/history', description: 'A future home for published seasons and community highlights.', section: 'matchroom', planned: true},
   tiquicia: {label: 'RB Tiquicia', path: 'rb-tiquicia', description: 'Our community’s Pro Clubs team.', section: 'ugs'},
   profile: {label: 'My Profile', path: 'profile', description: 'Your followed teams and gaming details.', section: 'ugs'},

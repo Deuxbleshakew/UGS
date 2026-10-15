@@ -47,13 +47,13 @@ function singlePlayer(members: Member[]): string | null {
   return ids[0] ?? null;
 }
 
-export type AccountAccessRow = {key: string; accountId: string | null; memberId: string | null; playerId: string | null; name: string; email: string; username: string | null; owner: boolean; status: 'active' | 'pending'};
+export type AccountAccessRow = {key: string; accountId: string | null; memberId: string | null; playerId: string | null; name: string; email: string; username: string | null; owner: boolean; status: 'active' | 'pending'; disabled?: boolean; disabledReason?: string | null};
 export function accountDirectory(actor: Actor): AccountAccessRow[] {
   requireOwner(actor);
-  const active = rows<{id: string; name: string; email: string; owner: number; username: string | null; player_id: string | null}>(
-    'SELECT a.id,a.name,a.email,a.owner,u.username,u.player_id FROM accounts a LEFT JOIN account_usernames u ON u.account_id=a.id ORDER BY a.owner DESC,a.name,a.id');
+  const active = rows<{id: string; name: string; email: string; owner: number; username: string | null; player_id: string | null; disabled_reason: string | null; disabled_at: string | null}>(
+    'SELECT a.id,a.name,a.email,a.owner,u.username,u.player_id,s.reason AS disabled_reason,s.disabled_at FROM accounts a LEFT JOIN account_usernames u ON u.account_id=a.id LEFT JOIN account_status s ON s.account_id=a.id ORDER BY a.owner DESC,a.name,a.id');
   const pending = rows<Member>('SELECT m.* FROM members m JOIN tournaments t ON t.id=m.tournament_id WHERE t.owner_id=? AND m.user_id IS NULL AND NOT EXISTS(SELECT 1 FROM accounts a WHERE m.email<>\'\' AND a.email=m.email) ORDER BY m.name,m.id', actor.userId);
-  const result: AccountAccessRow[] = active.map(a => ({key: 'account:' + a.id, accountId: a.id, memberId: null, playerId: a.player_id, name: a.name, email: a.email, username: a.username, owner: a.owner === 1, status: 'active'}));
+  const result: AccountAccessRow[] = active.map(a => ({key: 'account:' + a.id, accountId: a.id, memberId: null, playerId: a.player_id, name: a.name, email: a.email, username: a.username, owner: a.owner === 1, status: 'active', disabled: !!a.disabled_at, disabledReason: a.disabled_reason}));
   const seen = new Set<string>();
   for (const m of pending) {
     const key = m.username ? 'username:' + m.username : 'email:' + m.email;

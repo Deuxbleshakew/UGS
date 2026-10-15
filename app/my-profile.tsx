@@ -2,13 +2,17 @@
 import {useState,type FormEvent} from 'react';
 import seed from '@/data/draw-config.json';
 import {teamKey,type ProfileState,type ProfileData} from '@/lib/profile';
+import {teamChoices} from '@/lib/team-catalog';
+import {commonTimezones} from '@/lib/timezone';
 import {api} from './ui';
 import DiscordConnection from './discord-connection';
+import AvatarPicker from './avatar-picker';
+import ChangePassword from './change-password';
 
-export default function MyProfile({profile,username,onRefresh}:{profile:ProfileState;username:string|null;onRefresh:()=>Promise<unknown>}){
-  const [data,setData]=useState<ProfileData>(profile.data),[query,setQuery]=useState(''),[other,setOther]=useState(''),[kind,setKind]=useState<'football'|'community'>('football');
+export default function MyProfile({profile,username,userId,onRefresh}:{profile:ProfileState;username:string|null;userId:string;onRefresh:()=>Promise<unknown>}){
+  const [data,setData]=useState<ProfileData>(profile.data),[query,setQuery]=useState(''),[other,setOther]=useState(''),[kind,setKind]=useState<'football'|'community'>('football'),[otherZone,setOtherZone]=useState(false);
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
-  const choices=[...seed.clubs.map(c=>({kind:'football' as const,name:c.name})),{kind:'community' as const,name:'RB Tiquicia'}];
+  const choices=teamChoices(seed.clubs.map(c=>c.name));
   const timezoneOptions=typeof Intl.supportedValuesOf==='function'?Intl.supportedValuesOf('timeZone'):['America/Costa_Rica','America/New_York','America/Chicago','America/Los_Angeles','UTC'];
   function field<K extends keyof ProfileData>(key:K,value:ProfileData[K]){setData(previous=>({...previous,[key]:value}));}
   function add(team:ProfileData['teams'][number]){
@@ -41,12 +45,15 @@ export default function MyProfile({profile,username,onRefresh}:{profile:ProfileS
       <div className="profile-platforms">{(['PlayStation','PC','Xbox'] as const).map(p=><label key={p}><input type="checkbox" checked={data.platforms.includes(p)} onChange={e=>field('platforms',e.target.checked?[...data.platforms,p]:data.platforms.filter(x=>x!==p))}/>{p}</label>)}</div>
       {data.platforms.includes('PlayStation')&&<label className="field">PlayStation Online ID<input value={data.psnId} maxLength={80} onChange={e=>field('psnId',e.target.value)}/></label>}
       {data.platforms.some(p=>p==='PC'||p==='Xbox')&&<label className="field">EA ID · PC / Xbox<input value={data.eaId} maxLength={80} onChange={e=>field('eaId',e.target.value)}/></label>}
-      <label className="field">Timezone<input list="profile-timezones" value={data.timezone} maxLength={100} placeholder="America/Costa_Rica" onChange={e=>field('timezone',e.target.value)}/><datalist id="profile-timezones">{timezoneOptions.map(t=><option key={t} value={t}/>)}</datalist></label>
+      <label className="field">Timezone<select value={otherZone||!commonTimezones.some(z=>z.value===data.timezone)&&data.timezone?'__other':data.timezone} onChange={e=>{if(e.target.value==='__other'){setOtherZone(true);}else{setOtherZone(false);field('timezone',e.target.value);}}}><option value="">Choose your timezone</option>{commonTimezones.map(z=><option key={z.value} value={z.value}>{z.label} · {z.value}</option>)}<option value="__other">Other timezone…</option></select></label>
+      {(otherZone||(!!data.timezone&&!commonTimezones.some(z=>z.value===data.timezone)))&&<label className="field">Other timezone <small>Full list, for example Asia/Tokyo</small><input list="profile-timezones" value={data.timezone} maxLength={100} placeholder="Region/City" onChange={e=>field('timezone',e.target.value)}/><datalist id="profile-timezones">{timezoneOptions.map(t=><option key={t} value={t}/>)}</datalist></label>}
       <button type="button" className="text-btn" onClick={()=>field('timezone',Intl.DateTimeFormat().resolvedOptions().timeZone)}>Use this device’s timezone</button>
       <p className="fine-print">Gaming IDs and timezone are stored in your private account profile. Your tournament assignments and historical player names stay unchanged.</p>
       <button className="btn primary" disabled={busy}>{busy?'Saving…':'Save profile'}</button>
     </fieldset></form>
     {error&&<p className="notice error" role="alert">{error}</p>}{message&&<p className="notice" role="status">{message}</p>}
+    <AvatarPicker userId={userId} name={data.displayName||username||'You'}/>
     <DiscordConnection/>
+    <ChangePassword/>
   </section>;
 }

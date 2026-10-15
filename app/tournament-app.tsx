@@ -12,6 +12,7 @@ import UgsSections from './ugs-sections';
 import MyProfile from './my-profile';
 import MatchweekPanel from './matchweek-panel';
 import ScheduleSettings from './schedule-settings';
+import Friendlies from './friendlies';
 import {adminViews, competitionViews, isUgsView, matchroomViews, ugsViews, viewFromHash, viewHref, type UgsView} from './ugs-navigation';
 
 const icons: Record<UgsView, LucideIcon> = {
@@ -112,7 +113,7 @@ export default function TournamentApp() {
     </a>;
   }
 
-  if(state?.onboardingRequired&&state.profile)return <main className="ugs-onboarding"><UgsBrand/><p className="notice">Complete your profile to enter Union Gaming. Your account and history are preserved.</p><MyProfile key={state.profile.version} profile={state.profile} username={state.user.username} onRefresh={()=>refresh()}/><button className="btn secondary" onClick={async()=>{try{await api('auth/logout',{});window.location.assign('/login');}catch(e){setError((e as Error).message);}}}>Sign out</button>{error&&<p role="alert">{error}</p>}</main>;
+  if(state?.onboardingRequired&&state.profile)return <main className="ugs-onboarding"><UgsBrand/><p className="notice">Complete your profile to enter Union Gaming. Your account and history are preserved.</p><MyProfile key={state.profile.version} profile={state.profile} username={state.user.username} userId={state.user.userId} onRefresh={()=>refresh()}/><button className="btn secondary" onClick={async()=>{try{await api('auth/logout',{});window.location.assign('/login');}catch(e){setError((e as Error).message);}}}>Sign out</button>{error&&<p role="alert">{error}</p>}</main>;
   return <div className="app-shell ugs-app">
     <a className="ugs-skip-link" href="#ugs-main" onClick={event => {event.preventDefault(); mainRef.current?.focus();}}>Skip to content</a>
     <aside id="ugs-sidebar" className={`sidebar ${mobile ? 'is-open' : ''}`}>
@@ -150,7 +151,7 @@ export default function TournamentApp() {
           {existing && !denied && <div className="ugs-workspace-strip"><div><span className="eyebrow">SELECTED TOURNAMENT</span><strong>{tournament?.name ?? 'No tournament selected'}</strong></div><button className="btn secondary" onClick={() => open('switch')}><Shield size={16} />Your tournaments <ChevronDown size={15} /></button></div>}
           {(view==='fixtures'||view==='overview')&&<MatchweekPanel key={tournament?.id} state={state} onRefresh={()=>refresh(tournament?.id)}/>}
           {owner&&view==='settings'&&tournament&&<ScheduleSettings key={tournament.id} tid={tournament.id} weeks={(state?.matchweeks?.weeks??[]).map(w=>w.week)} timezone={state?.profile?.data.timezone}/>}
-          {view==='profile'&&state.profile ? <MyProfile key={state.profile.version} profile={state.profile} username={state.user.username} onRefresh={()=>refresh(tournament?.id)}/> : denied ? <Empty title="Owner access required" description="Only the owner can open tournament administration. Choose an authorized tournament to manage it." />
+          {view==='profile'&&state.profile ? <MyProfile key={state.profile.version} profile={state.profile} username={state.user.username} userId={state.user.userId} onRefresh={()=>refresh(tournament?.id)}/> : view==='friendlies'&&state.profile ? <Friendlies timezone={state.profile.data.timezone}/> : denied ? <Empty title="Owner access required" description="Only the owner can open tournament administration. Choose an authorized tournament to manage it." />
             : existing && !ready && view !== 'settings' ? <Empty title="No tournament available yet" description={owner ? 'Create a tournament to start using the competition workspace.' : 'Your organizer will authorize your tournament access.'}>{owner && <button className="btn primary" onClick={() => open('create')}>Create tournament <ArrowRight size={16} /></button>}</Empty>
             : existing ? <Views view={view} state={state} config={config} fixtures={fixtures} onNavigate={navigate} onOpenMatch={openMatch} onDialog={open} onExport={download} onRefresh={() => refresh(tournament?.id)} />
             : <UgsSections view={view} state={state} onNavigate={navigate} onDialog={open} />}

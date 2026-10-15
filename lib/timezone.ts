@@ -26,3 +26,11 @@ export function utcToZonedLocal(iso:string,tz:string){return new Date(parts(new 
 export function formatInZone(iso:string,tz:string|undefined){
   return new Intl.DateTimeFormat(undefined,{timeZone:tz||undefined,weekday:'short',day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',timeZoneName:'short'}).format(new Date(iso));
 }
+/** Short list offered first in My Profile. Any valid IANA zone is still accepted via "Other timezone". */
+export const commonTimezones:{value:string;label:string}[]=[
+  ['America/Costa_Rica','Costa Rica'],['America/New_York','US Eastern (New York)'],['America/Chicago','US Central (Chicago)'],['America/Denver','US Mountain (Denver)'],['America/Phoenix','US Arizona (Phoenix)'],['America/Los_Angeles','US Pacific (Los Angeles)'],['America/Anchorage','Alaska'],['Pacific/Honolulu','Hawaii'],
+  ['America/Toronto','Canada Eastern (Toronto)'],['America/Vancouver','Canada Pacific (Vancouver)'],['America/Mexico_City','Mexico City'],
+  ['America/Guatemala','Guatemala'],['America/El_Salvador','El Salvador'],['America/Tegucigalpa','Honduras'],['America/Managua','Nicaragua'],['America/Panama','Panama'],['America/Puerto_Rico','Puerto Rico'],['America/Santo_Domingo','Dominican Republic'],
+  ['America/Bogota','Colombia'],['America/Lima','Peru'],['America/Caracas','Venezuela'],['America/Santiago','Chile'],['America/Argentina/Buenos_Aires','Argentina'],['America/Sao_Paulo','Brazil (Sao Paulo)'],
+  ['Europe/London','United Kingdom'],['Europe/Madrid','Spain'],['Europe/Paris','France'],['Europe/Berlin','Germany'],['Europe/Lisbon','Portugal'],['UTC','UTC'],
+].map(([value,label])=>({value,label}));

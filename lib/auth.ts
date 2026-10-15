@@ -3,7 +3,7 @@ import { randomBytes,randomUUID } from 'node:crypto';
 import { database } from '@/scripts/local-store.mjs';
 import { digest,hashPassword,verifyPassword } from '@/scripts/account-crypto.mjs';
 import { z } from 'zod';
-import {usernameSchema} from './account-access';
+import {usernameSchema,AccountAccessError} from './account-access';
 
 export type CurrentUser={userId:string;displayName:string;email:string;username:string|null;isOwner:boolean};
 type Account={id:string;email:string;name:string;password_hash:string;owner:number;username:string|null};
@@ -11,7 +11,7 @@ const cookieName='matchroom_session',life=7*24*60*60;
 export async function getCurrentUser():Promise<CurrentUser|null>{
   const token=(await cookies()).get(cookieName)?.value;
   if(!token||!/^[a-f0-9]{64}$/.test(token))return null;
-  const row=database().prepare('SELECT a.*,u.username FROM accounts a JOIN sessions s ON s.account_id=a.id LEFT JOIN account_usernames u ON u.account_id=a.id WHERE s.token_hash=? AND s.expires_at>?').get(digest(token),Date.now()) as Account|undefined;
+  const row=database().prepare('SELECT a.*,u.username FROM accounts a JOIN sessions s ON s.account_id=a.id LEFT JOIN account_usernames u ON u.account_id=a.id WHERE s.token_hash=? AND s.expires_at>? AND NOT EXISTS(SELECT 1 FROM account_status x WHERE x.account_id=a.id)').get(digest(token),Date.now()) as Account|undefined;
   return row?{userId:row.id,displayName:row.name,email:row.email,username:row.username,isOwner:row.owner===1}:null;
 }
 export function sameOrigin(request:Request){
@@ -22,6 +22,7 @@ export function sameOrigin(request:Request){
 function reply(data:unknown,status=200){return Response.json(data,{status,headers:{'Cache-Control':'no-store'}});}
 export async function issueSession(accountId:string){
   const jar=await cookies(),old=jar.get(cookieName)?.value,db=database();
+  if(db.prepare('SELECT 1 FROM account_status WHERE account_id=?').get(accountId))throw new AccountAccessError('This account has been disabled. Contact the organizer.',403);
   const token=randomBytes(32).toString('hex');
   if(old)db.prepare('DELETE FROM sessions WHERE token_hash=?').run(digest(old));
   db.prepare('DELETE FROM sessions WHERE expires_at<=?').run(Date.now());
@@ -69,6 +70,7 @@ export async function authentication(request:Request,action:string){
     if(!await verifyPassword(parsed.data.password,account?.password_hash)||!account)return reply({error:'Username or password is incorrect. Email works only until a username is assigned.'},401);
     // An assignment during password verification must not revive legacy email login.
     if(legacy&&db.prepare('SELECT username FROM account_usernames WHERE account_id=?').get(account.id))return reply({error:'Use the username assigned by your organizer with your existing password.'},401);
+    if(db.prepare('SELECT 1 FROM account_status WHERE account_id=?').get(account.id))return reply({error:'This account has been disabled. Contact the organizer.'},403);
     await issueSession(account.id);return reply({ok:true});
   }
   if(action==='activate'){
@@ -113,4 +115,24 @@ export async function authentication(request:Request,action:string){
     await issueSession(accountId);return reply({ok:true});
   }
   return reply({error:'Unknown sign-in action.'},404);
+}
+
+const passwordSchema=z.object({current:z.string().min(1).max(200),next:z.string().min(12,'Use a new password of 12–200 characters.').max(200,'Use a new password of 12–200 characters.')});
+/** Change the signed-in user's own password. Needs the current password, is rate limited, ends every other session. */
+export async function changePassword(user:CurrentUser,input:unknown){
+  const parsed=passwordSchema.safeParse(input);
+  if(!parsed.success)throw new AccountAccessError(parsed.error.issues[0]?.message??'Check the password fields.',400);
+  const {current,next}=parsed.data,db=database();
+  if(!allowAttempt('password:'+user.userId))throw new AccountAccessError('Too many attempts. Please wait 15 minutes.',429);
+  const row=db.prepare('SELECT password_hash FROM accounts WHERE id=?').get(user.userId) as {password_hash:string}|undefined;
+  if(!row||!await verifyPassword(current,row.password_hash))throw new AccountAccessError('Your current password is incorrect.',403);
+  if(current===next)throw new AccountAccessError('Choose a password different from the current one.',400);
+  const hash=await hashPassword(next),token=(await cookies()).get(cookieName)?.value,keep=token&&/^[a-f0-9]{64}$/.test(token)?digest(token):'';
+  db.exec('BEGIN IMMEDIATE');
+  try{
+    db.prepare('UPDATE accounts SET password_hash=? WHERE id=?').run(hash,user.userId);
+    const ended=Number(db.prepare('DELETE FROM sessions WHERE account_id=? AND token_hash<>?').run(user.userId,keep).changes);
+    db.prepare('INSERT INTO account_access_audit(id,actor_id,target_account_id,username,action,created_at) VALUES(?,?,?,?,?,?)').run(randomUUID(),user.userId,user.userId,user.username??'','change-password',new Date().toISOString());
+    db.exec('COMMIT');return {ok:true,otherSessionsEnded:ended};
+  }catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}
 }

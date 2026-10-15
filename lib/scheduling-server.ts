@@ -48,7 +48,7 @@ function humans(f:Pick<Fx,'tournament_id'|'kind'|'home'|'away'>,c:Config){
   return keys;
 }
 /** Overlap: with a configured duration, two bookings overlap when each starts before the other ends. Without one, only identical start times are detected. */
-const overlaps=(a:number,b:number,minutes:number|null)=>minutes?a<b+minutes*6e4&&b<a+minutes*6e4:a===b;
+export const overlaps=(a:number,b:number,minutes:number|null)=>minutes?a<b+minutes*6e4&&b<a+minutes*6e4:a===b;
 
 function validateTime(d:DatabaseSync,f:Fx,c:Config,proposedAt:string,now=Date.now()){
   const at=new Date(proposedAt).getTime();
