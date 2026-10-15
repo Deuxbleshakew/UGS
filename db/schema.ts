@@ -8,6 +8,10 @@ export const accounts=sqliteTable('accounts',{
 export const sessions=sqliteTable('sessions',{
   tokenHash:text('token_hash').primaryKey(),accountId:text('account_id').notNull().references(()=>accounts.id),expiresAt:integer('expires_at').notNull(),
 },t=>[index('session_account').on(t.accountId)]);
+export const accountProfiles=sqliteTable('account_profiles',{
+  accountId:text('account_id').primaryKey().references(()=>accounts.id),data:text('data').notNull(),
+  version:integer('version').notNull().default(1),updatedAt:text('updated_at').notNull(),
+});
 export const invitations=sqliteTable('invitations',{
   tokenHash:text('token_hash').primaryKey(),email:text('email').notNull(),name:text('name').notNull(),
   tournamentId:text('tournament_id').notNull().references(()=>tournaments.id),expiresAt:integer('expires_at').notNull(),
@@ -29,6 +33,10 @@ export const members = sqliteTable("members", {
   playerId:text('player_id').references(()=>communityPlayers.id),
   username:text('username').references(()=>accountUsernames.username),
 }, t=>[uniqueIndex("member_email").on(t.tournamentId,t.email).where(sql`${t.email} <> ''`),uniqueIndex("member_manager").on(t.tournamentId,t.managerId),uniqueIndex('member_player').on(t.tournamentId,t.playerId),uniqueIndex('member_username').on(t.tournamentId,t.username).where(sql`${t.username} IS NOT NULL`), index("member_user").on(t.userId)]);
+export const matchweekControl=sqliteTable('matchweek_control',{
+  tournamentId:text('tournament_id').primaryKey().references(()=>tournaments.id),
+  currentWeek:integer('current_week').notNull(),version:integer('version').notNull().default(1),updatedAt:text('updated_at').notNull(),
+},t=>[check('matchweek_positive',sql`${t.currentWeek} >= 1`)]);
 export const fixtures = sqliteTable("fixtures", {
   id: text("id").primaryKey(), tournamentId: text("tournament_id").notNull().references(()=>tournaments.id),
   home: text("home").notNull(), away: text("away").notNull(), stage: text("stage").notNull(),
@@ -81,3 +89,47 @@ export const playoffTies=sqliteTable('playoff_ties',{
   id:text('id').primaryKey(),playoffId:text('playoff_id').notNull().references(()=>playoffs.id),round:integer('round').notNull(),position:integer('position').notNull(),
   playerA:text('player_a').notNull().references(()=>communityPlayers.id),playerB:text('player_b').references(()=>communityPlayers.id),
 },t=>[uniqueIndex('playoff_tie_position').on(t.playoffId,t.round,t.position),check('playoff_distinct_players',sql`${t.playerB} IS NULL OR ${t.playerA} <> ${t.playerB}`)]);
+
+// 0010: optional Discord connection (no tokens stored; one identity per account).
+export const discordLinks=sqliteTable('discord_links',{
+  accountId:text('account_id').primaryKey().references(()=>accounts.id),discordUserId:text('discord_user_id').notNull(),
+  discordName:text('discord_name').notNull(),linkedAt:text('linked_at').notNull(),
+},t=>[uniqueIndex('discord_link_user').on(t.discordUserId),
+  check('discord_user_id_format',sql`length(${t.discordUserId}) BETWEEN 15 AND 22 AND ${t.discordUserId} NOT GLOB '*[^0-9]*'`)]);
+export const discordOauthStates=sqliteTable('discord_oauth_states',{
+  stateHash:text('state_hash').primaryKey(),purpose:text('purpose').notNull(),accountId:text('account_id').references(()=>accounts.id),
+  browserHash:text('browser_hash').notNull(),expiresAt:integer('expires_at').notNull(),
+},t=>[index('discord_state_expiry').on(t.expiresAt)]);
+export const discordLinkAudit=sqliteTable('discord_link_audit',{
+  id:text('id').primaryKey(),accountId:text('account_id').notNull().references(()=>accounts.id),discordUserId:text('discord_user_id').notNull(),
+  action:text('action').notNull(),createdAt:text('created_at').notNull(),
+},t=>[index('discord_audit_account').on(t.accountId,t.createdAt)]);
+
+// Milestone: match scheduling (migration 0011). Documentation mirror; the runtime uses the SQL migration.
+export const scheduleSettings = sqliteTable("schedule_settings", {
+  tournamentId: text("tournament_id").primaryKey().references(() => tournaments.id),
+  bookingMinutes: integer("booking_minutes"), seasonStart: text("season_start"), seasonEnd: text("season_end"),
+  version: integer("version").notNull().default(1), updatedAt: text("updated_at").notNull(),
+});
+export const scheduleWindows = sqliteTable("schedule_windows", {
+  id: text("id").primaryKey(), tournamentId: text("tournament_id").notNull().references(() => tournaments.id),
+  matchday: integer("matchday"), fixtureId: text("fixture_id").references(() => fixtures.id),
+  opensAt: text("opens_at"), deadlineAt: text("deadline_at"),
+  version: integer("version").notNull().default(1), updatedAt: text("updated_at").notNull(),
+});
+export const scheduleProposals = sqliteTable("schedule_proposals", {
+  id: text("id").primaryKey(), tournamentId: text("tournament_id").notNull().references(() => tournaments.id),
+  fixtureId: text("fixture_id").notNull().references(() => fixtures.id), kind: text("kind").notNull(),
+  proposedAt: text("proposed_at").notNull(), proposedLocal: text("proposed_local").notNull(), proposerTimezone: text("proposer_timezone").notNull(),
+  baseKickoff: text("base_kickoff"), proposerAccountId: text("proposer_account_id").notNull(), proposerName: text("proposer_name").notNull(),
+  proposerSide: text("proposer_side").notNull(), responderSide: text("responder_side").notNull(), parentId: text("parent_id"),
+  message: text("message"), status: text("status").notNull(), beyondDeadline: integer("beyond_deadline").notNull().default(0),
+  decidedBy: text("decided_by"), decidedReason: text("decided_reason"), createdAt: text("created_at").notNull(), decidedAt: text("decided_at"),
+  version: integer("version").notNull().default(1),
+});
+export const scheduleEvents = sqliteTable("schedule_events", {
+  id: text("id").primaryKey(), tournamentId: text("tournament_id").notNull().references(() => tournaments.id),
+  fixtureId: text("fixture_id").notNull().references(() => fixtures.id), proposalId: text("proposal_id"),
+  actorId: text("actor_id"), actorName: text("actor_name").notNull(), at: text("at").notNull(), action: text("action").notNull(),
+  reason: text("reason"), kickoffBefore: text("kickoff_before"), kickoffAfter: text("kickoff_after"), proposedAt: text("proposed_at"),
+});

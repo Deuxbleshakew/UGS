@@ -4,16 +4,17 @@ import {ArrowLeft,ArrowRight,ImagePlus,Trash2,X,Loader2,ShieldCheck,AlertCircle,
 import {warnings,statisticFields,type Config,type Fixture,type Report,type MatchEvent} from "@/lib/domain";
 import {api,Crest,Modal,Status,type User,type Member} from "./ui";
 import {fixtureSide,stageLabel,type CommunityPlayer} from '@/lib/competition';
+import MatchScheduling from './match-scheduling';
 type Proof={id:string;name:string;category:string;size:number;uploader:string};
 
-export default function MatchReport({fixture:f,config:c,players=[],fixtures=[],tournamentId:tid,user,member,onClose,onSaved}:{fixture:Fixture;config:Config;players?:CommunityPlayer[];fixtures?:Fixture[];tournamentId:string;user:User;member:Member;onClose:()=>void;onSaved:()=>Promise<void>}){
+export default function MatchReport({fixture:f,config:c,players=[],fixtures=[],tournamentId:tid,user,member,timezone,onClose,onSaved}:{timezone?:string;fixture:Fixture;config:Config;players?:CommunityPlayer[];fixtures?:Fixture[];tournamentId:string;user:User;member:Member;onClose:()=>void;onSaved:()=>Promise<void>}){
   const [report,setReport]=useState<Report>(f.report??{homeScore:0,awayScore:0,playedAt:new Date().toISOString(),rosterVersion:'Not recorded',home:{},away:{},events:[],notes:''});
   const [step,setStep]=useState(0),[proofs,setProofs]=useState<Proof[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState(''),[reason,setReason]=useState(''),[editing,setEditing]=useState(false);
   const [event,setEvent]=useState<MatchEvent>({clubId:f.home,player:'',type:'goal'});
   const home=fixtureSide(f,'home',c,players),away=fixtureSide(f,'away',c,players),admin=member.role==='admin',editable=['scheduled','correction'].includes(f.status)||editing;
   const identity=f.kind==='player'?member.player_id:member.manager_id,identities=f.kind==='player'?[f.home,f.away]:[home.manager,away.manager];
-  const participant=admin||!!identity&&identities.includes(identity);
-  const opponent=identity&&identities.includes(identity)&&identity!==f.submitted_manager&&user.userId!==f.submitted_by;
+  const participant=admin||(member.role==='manager'&&!!identity&&identities.includes(identity));
+  const opponent=participant&&identity&&identities.includes(identity)&&identity!==f.submitted_manager&&user.userId!==f.submitted_by;
   const firstLeg=f.tie_id?fixtures.find(leg=>leg.tie_id===f.tie_id&&leg.leg===1):undefined;
   const endpoint=`tournament/${tid}/fixture/${f.id}`;
   async function loadProofs(){if(participant)setProofs(await api<Proof[]>(endpoint+'/proofs'));}
@@ -25,6 +26,7 @@ export default function MatchReport({fixture:f,config:c,players=[],fixtures=[],t
     <div className="report-steps">{['Score & proof','Match facts','Players','Review'].map((label,i)=><button key={label} className={step===i?'current':''} onClick={()=>setStep(i)}><span>{i+1}</span>{label}</button>)}</div>
     <div className="modal-body report-body">{error&&<div className="notice error" role="alert"><AlertCircle size={17}/>{error}</div>}{f.note&&<div className="notice"><FileCheck2 size={17}/>{f.note}</div>}
     {step===0&&<>
+      {participant&&<MatchScheduling fixture={f} tid={tid} member={member} timezone={timezone} onSaved={onSaved}/>}
       {admin&&f.status==='scheduled'&&<FixtureSchedule fixture={f} endpoint={endpoint} onSaved={onSaved}/>}
       <div className="form-two"><label className="field">Played on<input type="datetime-local" disabled={!editable} value={localDate(report.playedAt)} onChange={e=>{if(e.target.value)setReport({...report,playedAt:new Date(e.target.value).toISOString()});}}/></label><label className="field">Roster version <small>Optional</small><input value={report.rosterVersion} disabled={!editable} onChange={e=>setReport({...report,rosterVersion:e.target.value})}/></label></div>
       {f.tie_id&&<div className="notice">{f.leg===1?'First leg: draws are allowed. The return leg decides the aggregate winner.':firstLeg?.status==='finalized'&&firstLeg.report?`Leg 1: ${away.name} ${firstLeg.report.homeScore} – ${firstLeg.report.awayScore} ${home.name}. Include extra time in the leg 2 score. Penalties decide a tied aggregate; away goals do not apply.`:'Finalize leg 1 before submitting this return-leg report.'}</div>}

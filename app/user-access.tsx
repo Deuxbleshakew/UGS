@@ -3,6 +3,7 @@ import {useState, type FormEvent} from 'react';
 import {Copy, Plus, ShieldCheck, Users} from 'lucide-react';
 import {api, type AppState} from './ui';
 import type {AccountAccessRow} from '@/lib/account-access';
+import ViewerAccess from './viewer-access';
 
 type AccessResponse = {token: string | null; existingAccount: boolean; username: string};
 
@@ -84,8 +85,9 @@ export default function UserAccess({state, onRefresh}: {state: AppState | null; 
       <h3 className="form-section-title">Accounts & usernames</h3>
       <p className="fine-print">Assign your own username here too. Existing accounts keep their passwords and history. Email sign-in ends for an account when you assign its username. Assigning a pending invitation replaces its old link.</p>
       <div className="username-accounts">{(state?.accountAccess ?? []).map(entry => <UsernameAssignment key={entry.key} entry={entry} busy={busy} onAssign={assign}/>)}</div>
-      {!!state?.members?.length && <><h3 className="form-section-title">Selected tournament users</h3><div className="member-list">{state.members.map(member => <div key={member.id}><span className="avatar small">{member.name[0]}</span><span><b>{member.name}</b><small>{member.username ? '@' + member.username : 'Username not assigned'}</small><small>{member.role === 'admin' ? 'Admin · you' : 'Player'}</small></span><span className="pot-tag">{member.user_id ? 'Active' : 'Pending'}</span></div>)}</div></>}
-      <p className="fine-print">No public sign-up. Viewer permissions and required profile setup are part of a later milestone.</p>
+      {!!state?.members?.length && <><h3 className="form-section-title">Selected tournament users</h3><div className="member-list">{state.members.map(member => <div key={member.id}><span className="avatar small">{member.name[0]}</span><span><b>{member.name}</b><small>{member.username ? '@' + member.username : 'Username not assigned'}</small><small>{member.role === 'admin' ? 'Admin · you' : member.role === 'viewer' ? 'Viewer' : 'Player'}</small></span><span className="pot-tag">{member.user_id ? 'Active' : 'Pending'}</span></div>)}</div></>}
+      {admin && state?.tournament && <ViewerAccess key={state.tournament.id} tournamentId={state.tournament.id} onRefresh={onRefresh}/>}
+      <p className="fine-print">No public sign-up. Invited members complete their profile before accessing tournaments. Your owner account retains administration access.</p>
     </> : <p className="notice">Only the site owner can manage account access.</p>}
   </section>;
 }

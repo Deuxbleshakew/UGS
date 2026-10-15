@@ -1,0 +1,125 @@
+/* UGS default dark palette. Loaded after the original component styles. */
+:root {
+  color-scheme: dark;
+  --canvas: #0c111b;
+  --paper: #151e2c;
+  --ink: #dce4f0;
+  --muted: #a3b1c6;
+  --line: #2a384c;
+  --border: var(--line);
+  --ugs-night: #0d1523;
+  --ugs-soft: #1c2a40;
+  --ugs-link: #a1c1f5;
+  --green: #28569a;
+  --lime: #223a5b;
+  --dark: #0d1523;
+}
+::selection { background: #355989; color: #eef4ff; }
+body { background: var(--canvas); color: var(--ink); }
+.panel, .modal, .auth-card, .ugs-auth .auth-card, .metric-strip,
+.review-summary > div, .ugs-workspace-strip, .ugs-context-strip,
+.ugs-destination, .playoff-tie { background: var(--paper); border-color: var(--line); }
+.ugs-app .topbar { background: #101925; border-color: var(--line); }
+.ugs-auth .auth-card { box-shadow: 0 20px 70px #00000040; }
+.auth-page.ugs-auth { background: linear-gradient(130deg, #0b121e 45%, #14243b); }
+.ugs-auth::before { opacity: .65; height: 4px; }
+.ugs-auth-intro, .ugs-auth-intro h2, .ugs-hero h1 { color: var(--ink); }
+.ugs-auth-intro > p, .ugs-auth .auth-note { color: var(--muted); }
+.ugs-app .sidebar { background: #0b1320; }
+.ugs-nav-link.active { background: #203554; color: #dce9ff; border-left-color: #d65364; }
+.ugs-nav-link:hover, .ugs-nav-link.section-active { background: #192a42; color: #dce9ff; }
+.ugs-nav-link em, .avatar { background: #263d5e; color: #c5d9fc; }
+.breadcrumb, .private-label, .eyebrow, .page-heading p,
+.ugs-main .app-footer, .app-footer b { color: var(--muted); }
+.breadcrumb strong, .club-cell, .points, .review-facts b { color: var(--ink); }
+.text-btn, .auth-note a, .app-footer strong, .username-assigned b,
+.ugs-section-heading > svg, .ugs-team-info svg,
+.competition-rules summary { color: var(--ugs-link); }
+.text-btn:hover { color: #d6e6ff; }
+.btn.primary, .btn.dark { background: #28569a; color: #f1f5fc; }
+.btn.primary:hover, .btn.dark:hover { background: #3266af; }
+.btn.secondary, .btn.lime, .ugs-white-button {
+  background: #1d2d44; color: #d4e3fb; border: 1px solid #3a5070; box-shadow: none;
+}
+.btn.secondary:hover, .btn.lime:hover, .ugs-white-button:hover,
+.ugs-destination:hover { background: #263b57; color: #e2ecfa; border-color: #58769d; }
+.icon-btn:hover { background: #34486166; }
+button:disabled { opacity: .55; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible,
+textarea:focus-visible, summary:focus-visible { outline: 2px solid #9abef5; outline-offset: 3px; }
+.ugs-skip-link { background: #223852; color: #e6efff; }
+.field input, .field select, .field textarea, .compact-select,
+.score-inputs input, .stats-entry-row input {
+  background: #0f1826; color: var(--ink); border-color: #3b4b61;
+}
+.field input:disabled, .field select:disabled, .field textarea:disabled {
+  background: #17202e; color: #9aa8bc;
+}
+.field input:focus, .field select:focus, .field textarea:focus { border-color: #91b4e8; }
+input::placeholder, textarea::placeholder { color: #8d9eb6; opacity: 1; }
+input, select, textarea { color-scheme: dark; accent-color: #8cb1ec; }
+.search input { color: var(--ink); }
+input:-webkit-autofill { -webkit-text-fill-color: var(--ink); box-shadow: 0 0 0 1000px #0f1826 inset; caret-color: var(--ink); }
+.notice, .welcome-strip, .review-card, .competition-intro, .qualified-players,
+.seed-preview, .create-summary, .report-review, .awards-banner {
+  background: #1b2b42; color: #c5d7f1; border-color: #354d6d;
+}
+.notice.error, .inline-error, .status.disputed { background: #39232c; color: #ffb8bf; border-color: #74414e; }
+.notice.warning, .status.pending, .status.correction, .required-tag { background: #352d20; color: #ead099; border-color: #685538; }
+.status.confirmed, .status.finalized, .score.official { background: #19342f; color: #a3d8be; }
+.status, .score, .pot-tag, .ugs-planned-label { background: #253145; color: #bdcbe0; }
+.tabs { background: #101a28; }
+.tabs button { color: var(--muted); }
+.tabs button.selected { background: #294367; color: #dceaff; box-shadow: none; }
+.review-icon, .setting-icon, .ugs-feature-icon, .metric > svg, .empty-icon,
+.import-order b, .event-marker, .report-steps button > span {
+  background: #243650; color: #afc9ef;
+}
+.report-steps .current, .report-steps .current > span { color: #c4dafa; }
+.report-steps .current > span { background: #304c70; }
+.event-entry, .schedule-editor, .audit-values pre, .tie-heading,
+.entrant-grid label { background: #111c2b; color: var(--ink); border-color: var(--line); }
+.entrant-grid label:has(input:checked) { background: #243d5e; border-color: #6e91bf; }
+.entrant-grid input { accent-color: #8cb1ec; }
+th { background: #111b29; color: #b2bfd1; border-color: var(--line); }
+td { color: #bdc9d9; border-color: #263347; }
+.fixture-row:hover, .award-mini:hover { background: #1d2b40; }
+.crest { background: #213049; color: color-mix(in srgb, var(--club) 40%, #d6e4fa); }
+.form i, .tie-winner, .elo-up { color: #a4d6bc; }
+.form i { background: #1d3931; }
+.form .L, .elo-down { color: #ffb2b4; }
+.form .L { background: #3d272d; }
+.form .D { background: #2d3542; color: #c4cddd; }
+.award-medal { background: #3b3221; color: #e0c281; }
+.medal-1, .medal-2 { background: #253b38; color: #aacbbb; }
+.review-card p, .review-trust, .review-card .eyebrow, .competition-intro p,
+.player-add p, .competition-rules p, .entrant-grid small, .seed-preview-pairs small,
+.metric span, .metric small, .match-meta span, .match-meta small, .club-cell small,
+.panel-footnote, .table-legend, .empty p, .award-mini small, .tabs span,
+.club-card > p, .club-manager, .manager-card > p, .awards-banner small,
+.award-value small, .award-card > p, .award-awaiting, .award-card summary,
+.award-card details p, .review-summary span, .audit-row small, .settings-card > p,
+.member-list small, .modal > header p, .modal-body > p, .field small,
+.create-summary small, .report-steps button, .proof-card > div > span,
+.stats-entry-header, .stats-entry-row label, .stats-entry-row label small,
+.events-list small, .report-review p, .review-facts span, .step-count,
+.elo-name small, .aggregate-label, .bye-note { color: var(--muted); }
+.fine-print { color: var(--muted) !important; }
+.report-review h3 { color: var(--ink); }
+.proof-card img { background: #0c1420; }
+.dropzone { background: #111d2c; border-color: #41546e; color: #b6c7dd; }
+.modal-backdrop { background: #040912c9; }
+.mobile-scrim { background: #04091299; }
+.toast { background: #20334a; border-color: #4c6484; color: #dbe8fa; }
+.season-hero { background: #13243c; border-bottom-color: #a93548; }
+.ugs-hero::after { opacity: .6; }
+.ugs-competition-banner, .ugs-team-hero { border-bottom-color: #a93548; }
+
+/* Match scheduling */
+.schedule-panel { border: 1px solid var(--line); background: var(--paper); border-radius: 8px; padding: 14px 16px; margin: 0 0 14px; }
+.schedule-panel h3, .schedule-settings h3 { margin: 0 0 6px; }
+.sched-card { border: 1px solid #3b4b61; background: #0f1826; border-radius: 8px; padding: 12px; margin: 10px 0; }
+.sched-actions, .sched-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin-top: 8px; }
+.sched-actions .field, .sched-form .field { flex: 1 1 220px; }
+.sched-history ul { margin: 8px 0 0; padding-left: 18px; }
+.sched-history li { margin: 4px 0; }

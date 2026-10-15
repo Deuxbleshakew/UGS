@@ -4,8 +4,12 @@ import seed from "@/data/draw-config.json";
 import { configSchema, reportSchema, validateMatchReport, warnings, standings, managerRows, playerRows, awards, csv, type Config, type Fixture } from "./domain";
 import { z } from "zod";
 import { ensurePlayers, listPlayers, communityRankings, listPlayoffs, managerPlayer, addPlayer, createPlayoff, advancePlayoff, CompetitionError } from './competition-server';
-import {accountDirectory, assignUsername, authorizePlayer, createPlayerUser, AccountAccessError} from './account-access';
+import {accountDirectory, assignUsername, authorizePlayer, authorizeViewer, createPlayerUser, AccountAccessError} from './account-access';
 import { checkPlayoffReport, fixtureSide } from './competition';
+import {tournamentRole} from './access-policy';
+import {getProfile,saveProfile} from './profile-server';
+import {getMatchweeks,changeMatchweeks,requireOpenMatchweek} from './matchweeks-server';
+import {getSchedule,scheduleAction,scheduleAdmin} from './scheduling-server';
 
 type Member={id:string;tournament_id:string;user_id:string|null;email:string;username:string|null;name:string;role:string;manager_id:string|null;player_id:string|null};
 type Tournament={id:string;name:string;owner_id:string;config:string;created_at:string;awards:string|null;locked_at:string|null;revision:number};
@@ -22,10 +26,10 @@ async function membership(user:CurrentUser,tid:string){
   if(!row)fail("You do not have access to this tournament.",403);
   const {tournament_owner,...m}=row;
   // A saved membership role never grants admin authority to another account.
-  return {...m,role:user.isOwner&&tournament_owner===user.userId?'admin':'manager'};
+  return {...m,role:tournamentRole(user.isOwner,user.userId,tournament_owner,m.role)};
 }
 const admin=(m:Member)=>{if(m.role!=="admin")fail("Only the organizer can do that.",403);};
-function participant(m:Member,f:Fixture,c:Config){return m.role==="admin"||(f.kind==='player'?!!m.player_id&&[f.home,f.away].includes(m.player_id):c.clubs.some(club=>[f.home,f.away].includes(club.id)&&club.manager===m.manager_id));}
+function participant(m:Member,f:Fixture,c:Config){return m.role==="admin"||(m.role==='manager'&&(f.kind==='player'?!!m.player_id&&[f.home,f.away].includes(m.player_id):c.clubs.some(club=>[f.home,f.away].includes(club.id)&&club.manager===m.manager_id)));}
 function requireParticipant(m:Member,f:Fixture,c:Config){if(!participant(m,f,c))fail("This match belongs to other managers.",403);}
 function auditInsert(tid:string,user:CurrentUser,action:string,reason:string,before:unknown,after:unknown,fixture:string|null=null){
   return query('INSERT INTO audit(id,tournament_id,fixture_id,actor_id,actor_name,at,action,reason,"before","after") VALUES(?,?,?,?,?,?,?,?,?,?)',id(),tid,fixture,user.userId,user.displayName,now(),action,reason,JSON.stringify(before),JSON.stringify(after));
@@ -40,6 +44,7 @@ function json(data:unknown,status=200){return Response.json(data,{status,headers
 function checkReport(report:Parameters<typeof validateMatchReport>[0],fixture:Fixture){try{validateMatchReport(report,fixture);}catch(e){fail((e as Error).message);}}
 
 async function changeFixture(t:Tournament,m:Member,user:CurrentUser,f:Fixture,data:Record<string,unknown>){
+  requireOpenMatchweek(t.id,f);
   const c=configSchema.parse(JSON.parse(t.config));requireParticipant(m,f,c);
   if(data.version!==f.version)fail("This match changed. Refresh it before saving.",409);
   const action=String(data.action??""),reason=String(data.reason??"").trim().slice(0,2000);
@@ -94,16 +99,26 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
     // Once accepted, authorization uses the stable, site-scoped user ID.
     if(!user.username&&user.email)await query("UPDATE members SET user_id=? WHERE email=? AND email<>'' AND username IS NULL AND user_id IS NULL",user.userId,user.email.toLowerCase()).run();
     const url=new URL(request.url);
+    if(path.length===1&&path[0]==='profile'){
+      if(request.method==='GET')return json(getProfile(user));
+      if(request.method==='POST')return json(saveProfile(user,await body(request)));
+      fail('Method not allowed.',405);
+    }
+    const profile=getProfile(user),onboardingRequired=!user.isOwner&&!profile.complete;
+    if(onboardingRequired){
+      if(path.length===1&&path[0]==='state'&&request.method==='GET')return json({user,profile,onboardingRequired:true,tournaments:[],tournament:null});
+      fail('Complete your profile before using tournament workflows.',403);
+    }
     if(path[0]==="state"&&request.method==="GET"){
-      const choices=await all<{id:string;name:string;role:string}>("SELECT t.id,t.name,CASE WHEN a.owner=1 AND t.owner_id=m.user_id THEN 'admin' ELSE 'manager' END AS role FROM tournaments t JOIN members m ON m.tournament_id=t.id JOIN accounts a ON a.id=m.user_id WHERE m.user_id=? ORDER BY t.created_at DESC",user.userId);
+      const choices=await all<{id:string;name:string;role:string}>("SELECT t.id,t.name,CASE WHEN a.owner=1 AND t.owner_id=m.user_id THEN 'admin' WHEN m.role IN ('manager','participant') THEN 'manager' ELSE 'viewer' END AS role FROM tournaments t JOIN members m ON m.tournament_id=t.id JOIN accounts a ON a.id=m.user_id WHERE m.user_id=? ORDER BY t.created_at DESC",user.userId);
       const tid=url.searchParams.get("tournament")??choices[0]?.id;
-      if(!tid)return json({user,tournaments:[],tournament:null,seed,accountAccess:user.isOwner?accountDirectory(user):undefined});
+      if(!tid)return json({user,profile,onboardingRequired:false,tournaments:[],tournament:null,seed,accountAccess:user.isOwner?accountDirectory(user):undefined});
       let member=await membership(user,tid);const t=await query("SELECT * FROM tournaments WHERE id=?",tid).first<Tournament>();if(!t)fail("Tournament not found.",404);
       ensurePlayers(t.owner_id);member=await membership(user,tid);
       const config=configSchema.parse(JSON.parse(t.config)),fixtures=await getFixtures(tid);
       const visibleFixtures=fixtures.map(f=>f.status==="finalized"||participant(member,f,config)?f:{...f,report:null,note:null,submitted_by:null});
-      return json({user,tournaments:choices,tournament:{...t,config,awards:t.awards?JSON.parse(t.awards):null},member,fixtures:visibleFixtures,players:listPlayers(t.owner_id),rankings:communityRankings(t.owner_id),playoffs:listPlayoffs(tid),accountAccess:user.isOwner?accountDirectory(user):undefined,
-        members:member.role==="admin"?(await all<Member>("SELECT * FROM members WHERE tournament_id=?",tid)).map(m=>({...m,role:m.user_id===t.owner_id?'admin':'manager'})):[],
+      return json({user,profile,onboardingRequired:false,matchweeks:getMatchweeks(tid),tournaments:choices,tournament:{...t,config,awards:t.awards?JSON.parse(t.awards):null},member,fixtures:visibleFixtures,players:listPlayers(t.owner_id),rankings:communityRankings(t.owner_id),playoffs:listPlayoffs(tid),accountAccess:user.isOwner?accountDirectory(user):undefined,
+        members:member.role==="admin"?(await all<Member>("SELECT * FROM members WHERE tournament_id=?",tid)).map(m=>({...m,role:tournamentRole(m.user_id===t.owner_id,m.user_id??'',t.owner_id,m.role)})):[],
         audit:member.role==="admin"?await all("SELECT * FROM audit WHERE tournament_id=? ORDER BY at DESC LIMIT 100",tid):[],
       });
     }
@@ -158,8 +173,10 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
       else rows=fs.filter(f=>f.status==="finalized"&&f.report).map(f=>({fixture:f.id,home:fixtureSide(f,'home',c,listPlayers(t.owner_id)).name,away:fixtureSide(f,'away',c,listPlayers(t.owner_id)).name,stage:f.stage,matchday:f.matchday,tie:f.tie_id,leg:f.leg,finalizedAt:f.finalized_at,...f.report}));
       return new Response('\uFEFF'+csv(rows),{headers:{"Content-Type":"text/csv;charset=utf-8","Content-Disposition":`attachment; filename="matchroom-${['elo','qualifiers','clubs','managers','players','awards','audit','proofs'].includes(kind)?kind:'matches'}.csv"`,"Cache-Control":"no-store"}});
     }
+    if(path[2]==='schedule'&&path.length===3&&request.method==='GET')return json(getSchedule(t,m));
     if(path[2]==="fixture"&&path[3]){
       const raw=await query("SELECT * FROM fixtures WHERE id=? AND tournament_id=?",path[3],tid).first<Record<string,unknown>>();if(!raw)fail("Fixture not found.",404);const f=unpack(raw);requireParticipant(m,f,c);
+      if(path[4]==='scheduling'&&request.method==='POST')return json(scheduleAction(t,m,user,f.id,await body(request)));
       if(path[4]==="schedule"&&request.method==="POST"){
         admin(m);
         const input=z.object({version:z.number().int(),matchday:z.number().int().min(1).max(100),scheduled:z.string().datetime().nullable()}).parse(await body(request));
@@ -167,6 +184,8 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
         const op=id();const saved=await db().batch([
           query("UPDATE fixtures SET matchday=?,scheduled=?,version=version+1,mutation=? WHERE id=? AND version=? AND status='scheduled' AND EXISTS(SELECT 1 FROM tournaments WHERE id=? AND locked_at IS NULL)",input.matchday,input.scheduled,op,f.id,input.version,tid),
           query('INSERT INTO audit(id,tournament_id,fixture_id,actor_id,actor_name,at,action,reason,"before","after") SELECT ?,?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM fixtures WHERE id=? AND mutation=?)',id(),tid,f.id,user.userId,user.displayName,now(),"reschedule","Organizer updated the fixture calendar.",JSON.stringify({matchday:f.matchday,scheduled:f.scheduled}),JSON.stringify(input),f.id,op),
+          query("INSERT INTO schedule_events(id,tournament_id,fixture_id,proposal_id,actor_id,actor_name,at,action,reason,kickoff_before,kickoff_after,proposed_at) SELECT lower(hex(randomblob(16))),tournament_id,fixture_id,id,?,?,?,'superseded','Owner set the kickoff directly.',?,?,proposed_at FROM schedule_proposals WHERE fixture_id=? AND status IN ('awaiting_opponent','awaiting_owner') AND EXISTS(SELECT 1 FROM fixtures WHERE id=? AND mutation=?)",user.userId,user.displayName,now(),f.scheduled,input.scheduled,f.id,f.id,op),
+          query("UPDATE schedule_proposals SET status='superseded',version=version+1,decided_at=? WHERE fixture_id=? AND status IN ('awaiting_opponent','awaiting_owner') AND EXISTS(SELECT 1 FROM fixtures WHERE id=? AND mutation=?)",now(),f.id,f.id,op),
           query("UPDATE tournaments SET revision=revision+1 WHERE id=? AND EXISTS(SELECT 1 FROM fixtures WHERE id=? AND mutation=?)",tid,f.id,op),
         ]);
         if(saved[0].meta.changes!==1)fail("The fixture changed or awards are locked. Refresh before scheduling.",409);
@@ -175,6 +194,7 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
       if(path[4]==="proofs"){
         if(request.method==="GET")return json(await all("SELECT id,name,category,mime,size,uploader,uploaded_at FROM proofs WHERE fixture_id=? ORDER BY uploaded_at",f.id));
         if(request.method==="POST"){
+          requireOpenMatchweek(tid,f);
           if(!['scheduled','correction'].includes(f.status))fail("Proof can be added before submission or after a correction request.");
 
           const buffered=await bytes(request,8*1024*1024+65536);
@@ -200,7 +220,10 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
     }
     if(request.method!=="POST")fail("Endpoint not found.",404);
     admin(m);const data=await body(request);
+    if(path[2]==='matchweeks'&&path.length===3)return json(changeMatchweeks(tid,user,data));
+    if(path[2]==='schedule'&&path.length===4)return json(scheduleAdmin(tid,user,path[3],data));
     if(path[2]==='users')return json(createPlayerUser(tid,user,data));
+    if(path[2]==='viewers')return json(authorizeViewer(tid,user,data));
     if(path[2]==='players')return json(addPlayer(tid,user,data));
     if(path[2]==='playoffs'&&!path[3])return json(createPlayoff(tid,user,data));
     if(path[2]==='playoffs'&&path[3]&&path[4]==='advance')return json(advancePlayoff(tid,path[3],user,data));
@@ -287,6 +310,7 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
     }
     fail("Endpoint not found.",404);
   }catch(error){
+    if(error instanceof Error&&error.message.startsWith('Matchweek'))return json({error:error.message},409);
     if(error instanceof CompetitionError||error instanceof AccountAccessError)return json({error:error.message},error.status);
     if(error instanceof HttpError)return json({error:error.message},error.status);
     if(error instanceof z.ZodError)return json({error:error.issues.slice(0,3).map(i=>`${i.path.join(".")}: ${i.message}`).join(" · ")},400);

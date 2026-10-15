@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import "./competition.css";
 import "./ugs.css";
+import "./ugs-dark.css";
 
 export const metadata: Metadata = {
   title: "Union Gaming Society · UGS",

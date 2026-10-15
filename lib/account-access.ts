@@ -9,7 +9,7 @@ export const usernameSchema = z.string().trim().min(3).max(24)
 const optionalEmail = z.string().trim().max(254).refine(value => !value || z.string().email().safeParse(value).success, 'Enter a valid email or leave it blank.').transform(value => value.toLowerCase()).optional();
 type Actor = {userId: string; displayName: string};
 type Reservation = {username: string; account_id: string | null; player_id: string | null};
-type Member = {id: string; user_id: string | null; player_id: string | null; email: string; username: string | null; name: string};
+type Member = {id: string; user_id: string | null; player_id: string | null; email: string; username: string | null; name: string; role:string};
 export class AccountAccessError extends Error {constructor(message: string, public status = 400) {super(message);}}
 function fail(message: string, status = 400): never {throw new AccountAccessError(message, status);}
 const db = () => database() as DatabaseSync;
@@ -142,6 +142,30 @@ function grant(tid: string, actor: Actor, data: {playerId: string; username: str
 export function authorizePlayer(tid: string, actor: Actor, input: unknown) {
   const data = z.object({playerId: z.string().min(1), username: usernameSchema, email: optionalEmail}).parse(input);
   return atomic(() => grant(tid, actor, data));
+}
+
+// Viewers have tournament memberships, but no automatic rated-player identity.
+export function authorizeViewer(tid: string, actor: Actor, input: unknown) {
+  const data=z.object({name:z.string().trim().min(1).max(80),username:usernameSchema}).parse(input);
+  return atomic(()=>{
+    requireOwner(actor);
+    if(!one('SELECT id FROM tournaments WHERE id=? AND owner_id=?',tid,actor.userId)) fail('Tournament not found.',404);
+    let reservation=one<Reservation>('SELECT * FROM account_usernames WHERE username=?',data.username);
+    const existing=one<Member>('SELECT * FROM members WHERE tournament_id=? AND username=?',tid,data.username);
+    if(existing && existing.role!=='viewer') fail('This account already has participant access. Its assignment has not been changed.',409);
+    const account=reservation?.account_id?one<{id:string;name:string;email:string}>('SELECT id,name,email FROM accounts WHERE id=?',reservation.account_id):undefined;
+    if(account && one('SELECT id FROM members WHERE tournament_id=? AND user_id=? AND (username IS NULL OR username<>?)',tid,account.id,data.username)) fail('Assign the existing membership its username first.',409);
+    const pending=reservation?one<{name:string;email:string}>('SELECT name,email FROM members WHERE username=? LIMIT 1',data.username):undefined;
+    const name=account?.name??pending?.name??data.name,email=account?.email??pending?.email??'';
+    if(!reservation){
+      db().prepare('INSERT INTO account_usernames(username,created_at) VALUES(?,?)').run(data.username,new Date().toISOString());
+      reservation={username:data.username,account_id:null,player_id:null};
+    }
+    if(!existing) db().prepare("INSERT INTO members(id,tournament_id,user_id,email,name,role,username) VALUES(?,?,?,?,?,'viewer',?)")
+      .run(randomUUID(),tid,reservation.account_id,email,name,data.username);
+    record(actor,data.username,'authorize-viewer',reservation.account_id);
+    return invite(reservation,tid,name,email,actor);
+  });
 }
 
 export function createPlayerUser(tid: string, actor: Actor, input: unknown) {

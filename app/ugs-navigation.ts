@@ -25,7 +25,7 @@ export const ugsViews: Record<UgsView, ViewDefinition> = {
   friendlies: {label: 'Friendlies', path: 'matchroom/friendlies', description: 'A future home for arranging community matches.', section: 'matchroom', planned: true},
   history: {label: 'History', path: 'matchroom/history', description: 'A future home for published seasons and community highlights.', section: 'matchroom', planned: true},
   tiquicia: {label: 'RB Tiquicia', path: 'rb-tiquicia', description: 'Our community’s Pro Clubs team.', section: 'ugs'},
-  profile: {label: 'My Profile', path: 'profile', description: 'Profile setup is planned for a later milestone.', section: 'ugs', planned: true},
+  profile: {label: 'My Profile', path: 'profile', description: 'Your followed teams and gaming details.', section: 'ugs'},
   admin: {label: 'Admin', path: 'admin', description: 'Owner tools for your tournaments and player access.', section: 'admin'},
   review: {label: 'Review queue', path: 'admin/review', description: 'Review evidence and make match reports official.', section: 'admin'},
   settings: {label: 'Tournament setup', path: 'admin/setup', description: 'Manage player access, imports and tournament exports.', section: 'admin'},

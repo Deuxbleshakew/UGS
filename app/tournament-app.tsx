@@ -9,6 +9,9 @@ import MatchReport from './match-report';
 import WorkspaceDialog from './workspace-dialog';
 import UgsBrand from './ugs-brand';
 import UgsSections from './ugs-sections';
+import MyProfile from './my-profile';
+import MatchweekPanel from './matchweek-panel';
+import ScheduleSettings from './schedule-settings';
 import {adminViews, competitionViews, isUgsView, matchroomViews, ugsViews, viewFromHash, viewHref, type UgsView} from './ugs-navigation';
 
 const icons: Record<UgsView, LucideIcon> = {
@@ -85,9 +88,10 @@ export default function TournamentApp() {
     setModal(ready ? type : 'create');
   }
   function openMatch(f: Fixture) {
-    const canSee = admin || f.status === 'finalized' || (f.kind === 'player'
+    if(f.kind==='club'&&f.stage==='league'&&state?.matchweeks?.enabled&&f.matchday>(state.matchweeks.currentWeek??0)&&!admin){setToast('This future matchweek is locked. Kickoff bookings are tentative until the owner opens it.');return;}
+    const canSee = admin || f.status === 'finalized' || (state?.member?.role === 'manager' && (f.kind === 'player'
       ? !!state?.member?.player_id && [f.home, f.away].includes(state.member.player_id)
-      : config.clubs.some(c => [f.home, f.away].includes(c.id) && c.manager === state?.member?.manager_id));
+      : config.clubs.some(c => [f.home, f.away].includes(c.id) && c.manager === state?.member?.manager_id)));
     if (!canSee) {setToast('This report is private to its participants until finalized.'); return;}
     setSelected(f); setModal('match');
   }
@@ -108,6 +112,7 @@ export default function TournamentApp() {
     </a>;
   }
 
+  if(state?.onboardingRequired&&state.profile)return <main className="ugs-onboarding"><UgsBrand/><p className="notice">Complete your profile to enter Union Gaming. Your account and history are preserved.</p><MyProfile key={state.profile.version} profile={state.profile} username={state.user.username} onRefresh={()=>refresh()}/><button className="btn secondary" onClick={async()=>{try{await api('auth/logout',{});window.location.assign('/login');}catch(e){setError((e as Error).message);}}}>Sign out</button>{error&&<p role="alert">{error}</p>}</main>;
   return <div className="app-shell ugs-app">
     <a className="ugs-skip-link" href="#ugs-main" onClick={event => {event.preventDefault(); mainRef.current?.focus();}}>Skip to content</a>
     <aside id="ugs-sidebar" className={`sidebar ${mobile ? 'is-open' : ''}`}>
@@ -143,7 +148,9 @@ export default function TournamentApp() {
         {!loading && state && <>
           {view !== 'home' && <div className="page-heading"><div><div className="eyebrow">{competition ? 'MATCHROOM / CLUB CHAMPIONS' : inAdmin ? 'UGS / OWNER WORKSPACE' : 'UNION GAMING SOCIETY'}</div><h1>{view === 'overview' ? 'Club Champions' : definition.label}</h1><p>{definition.description}</p></div>{existing && !denied && <div className="heading-actions">{ready && <button className="btn secondary" onClick={() => download(view === 'awards' ? 'awards' : view === 'standings' ? 'clubs' : 'matches')}><ArrowDownToLine size={16} />Export CSV</button>}{(admin || (!ready && owner)) && <button className="btn primary" onClick={() => open('fixture')}><Plus size={17} />{ready ? 'Add fixture' : 'Create tournament'}</button>}</div>}</div>}
           {existing && !denied && <div className="ugs-workspace-strip"><div><span className="eyebrow">SELECTED TOURNAMENT</span><strong>{tournament?.name ?? 'No tournament selected'}</strong></div><button className="btn secondary" onClick={() => open('switch')}><Shield size={16} />Your tournaments <ChevronDown size={15} /></button></div>}
-          {denied ? <Empty title="Owner access required" description="Only the owner can open tournament administration. Choose an authorized tournament to manage it." />
+          {(view==='fixtures'||view==='overview')&&<MatchweekPanel key={tournament?.id} state={state} onRefresh={()=>refresh(tournament?.id)}/>}
+          {owner&&view==='settings'&&tournament&&<ScheduleSettings key={tournament.id} tid={tournament.id} weeks={(state?.matchweeks?.weeks??[]).map(w=>w.week)} timezone={state?.profile?.data.timezone}/>}
+          {view==='profile'&&state.profile ? <MyProfile key={state.profile.version} profile={state.profile} username={state.user.username} onRefresh={()=>refresh(tournament?.id)}/> : denied ? <Empty title="Owner access required" description="Only the owner can open tournament administration. Choose an authorized tournament to manage it." />
             : existing && !ready && view !== 'settings' ? <Empty title="No tournament available yet" description={owner ? 'Create a tournament to start using the competition workspace.' : 'Your organizer will authorize your tournament access.'}>{owner && <button className="btn primary" onClick={() => open('create')}>Create tournament <ArrowRight size={16} /></button>}</Empty>
             : existing ? <Views view={view} state={state} config={config} fixtures={fixtures} onNavigate={navigate} onOpenMatch={openMatch} onDialog={open} onExport={download} onRefresh={() => refresh(tournament?.id)} />
             : <UgsSections view={view} state={state} onNavigate={navigate} onDialog={open} />}
@@ -153,7 +160,7 @@ export default function TournamentApp() {
     </div>
     {toast && <div className="toast" role="status"><CheckCircle2 size={18} />{toast}<button className="icon-btn" aria-label="Dismiss message" onClick={() => setToast('')}><X size={16} /></button></div>}
     {modal === 'switch' && <Modal title="Your tournaments" subtitle="Choose the workspace you want to open." onClose={close}><div className="modal-body">{state?.tournaments.length ? state.tournaments.map(t => <button className="switch-row" key={t.id} onClick={() => saved(t.id).catch(e => setError(e.message))}><Shield size={21} />{t.name}<ChevronRight size={18} /></button>) : <p className="muted">{owner ? 'No tournaments created yet.' : 'No tournaments have been assigned to your account yet.'}</p>}{owner && <button className="btn secondary full" onClick={() => setModal('create')}><Plus size={17} />New tournament</button>}</div></Modal>}
-    {modal === 'match' && selected && tournament && state?.member && <MatchReport fixture={selected} config={config} players={state.players} fixtures={fixtures} tournamentId={tournament.id} user={state.user} member={state.member} onClose={close} onSaved={() => saved()} />}
+    {modal === 'match' && selected && tournament && state?.member && <MatchReport fixture={selected} config={config} players={state.players} fixtures={fixtures} tournamentId={tournament.id} user={state.user} member={state.member} timezone={state.profile?.data.timezone} onClose={close} onSaved={() => saved()} />}
     {owner && modal && ['create', 'fixture', 'import', 'awards-lock'].includes(modal) && <WorkspaceDialog type={modal} config={config} tournament={tournament ?? null} onClose={close} onSaved={saved} />}
   </div>;
 }

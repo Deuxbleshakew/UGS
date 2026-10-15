@@ -20,7 +20,7 @@ export function sameOrigin(request:Request){
   return origin===expected;
 }
 function reply(data:unknown,status=200){return Response.json(data,{status,headers:{'Cache-Control':'no-store'}});}
-async function issueSession(accountId:string){
+export async function issueSession(accountId:string){
   const jar=await cookies(),old=jar.get(cookieName)?.value,db=database();
   const token=randomBytes(32).toString('hex');
   if(old)db.prepare('DELETE FROM sessions WHERE token_hash=?').run(digest(old));

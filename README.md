@@ -12,13 +12,26 @@ organizer login and local run instructions. Source repository:
 [Deuxbleshakew/UGS](https://github.com/Deuxbleshakew/UGS).
 
 See [Milestone 1](docs/MILESTONE-1-UGS-SHELL.md) for the branding/navigation scope,
-changed files and manual review checklist. Friendlies, History, Rules & Guide and
-My Profile are explicitly marked Planned; their workflows are not implemented.
+changed files and manual review checklist. My Profile was marked Planned in
+Milestone 1. The local Milestone 2B now implements
+private profile setup and viewer access; Friendlies, History and Rules & Guide
+remain planned. See [Milestone 2B](docs/MILESTONE-2B-VIEWER-ACCESS.md).
 
-Milestone 2A (local implementation, not deployed) adds owner-assigned usernames
+Local [Milestone 3A](docs/MILESTONE-3A-MATCHWEEKS.md) adds explicitly enabled
+sequential matchweeks, finalized-result progress and owner advancement. It is not
+deployed. Participant scheduling proposals and season date windows remain next.
+
+Local Milestone 4A adds an optional Discord connection (link from My Profile, sign in only
+to an already-linked account). It is off until Discord credentials are configured and is not
+deployed. See [Discord handoff](docs/CLAUDE-DISCORD-HANDOFF.md).
+
+Local Milestone 3B adds match scheduling and rescheduling: kickoff proposals, opponent accept/decline/counter, timezone-aware times, manager-clash prevention, and owner approval for kickoffs beyond the deadline. See `docs/CLAUDE-SCHEDULING-HANDOFF.md`.
+
+Milestone 2A (deployed on 2026-10-14) adds owner-assigned usernames
 and private activation with optional email. See
 [username access](docs/MILESTONE-2A-USERNAME-ACCESS.md) for migration details and
-the validation status. The live service still uses its previous login behavior.
+the pre-release validation details. The live deployment uses commit
+`76e4fa8382e5795b415dd148805f80ee54f81bdc`. Milestone 2B is not deployed.
 
 ## Included in this first version
 
