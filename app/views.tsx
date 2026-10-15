@@ -4,6 +4,8 @@ import {ArrowRight,ArrowDownToLine,CalendarDays,CheckCircle2,ChevronDown,Chevron
 import {standings,managerRows,playerRows,awards,type Config,type Fixture,type Standing} from "@/lib/domain";
 import {Crest,Empty,FixtureList,colors,fmt,number,type AppState} from "./ui";
 import Setup from "./setup";
+import TeamPlayoffs from './team-playoffs';
+import SquadBuilder from './squad-builder';
 import {PlayerRankings,PlayoffsView} from './competition-views';
 import {fixtureSide} from '@/lib/competition';
 
@@ -16,6 +18,8 @@ export default function Views({view,state,config:c,fixtures:fs,onNavigate,onOpen
   const matches=(rows:Fixture[],compact=false)=><FixtureList rows={rows} config={c} players={state?.players} onOpen={onOpenMatch} compact={compact}/>;
   if(view==='elo')return <PlayerRankings state={state} onRefresh={onRefresh} onExport={onExport}/>;
   if(view==='playoffs')return <PlayoffsView state={state} onRefresh={onRefresh} onExport={onExport} onOpenMatch={onOpenMatch}/>;
+  if(view==='squad')return <SquadBuilder state={state}/>;
+  if(view==='teamplayoffs')return <TeamPlayoffs state={state}/>;
   if(view==='overview')return <>
     <section className="season-hero"><div className="hero-copy"><span className="hero-kicker"><i/>{state?.tournament?'YOUR SEASON IS OPEN':'READY FOR KICK-OFF'}</span><h2>Your tournament.<br/><span>All in play.</span></h2><p>{state?.tournament?.name??'UCL Fantasy 2026/27'}<br/>One home for the draw, the matches and the moments.</p><button className="btn lime" onClick={()=>onNavigate('fixtures')}>Go to fixtures <ArrowRight size={17}/></button></div><div className="hero-pitch" aria-hidden="true"><div className="pitch-outline"><div className="pitch-circle"/><div className="pitch-line"/><div className="penalty left"/><div className="penalty right"/></div><div className="hero-ball"><Trophy size={72} strokeWidth={1}/></div><span className="pitch-dot p1"/><span className="pitch-dot p2"/><span className="pitch-dot p3"/><span className="pitch-dot p4"/></div><div className="hero-caption"><span>THE ROAD TO THE FINAL</span><b>{c.clubs.length} clubs. One champion.</b></div></section>
     <div className="metric-strip">{[{label:'Clubs competing',value:c.clubs.length,sub:`Across ${c.pots.length} draw pots`,icon:Shield},{label:'Managers',value:c.managers.length,sub:'Every club has a story',icon:Users},{label:'Matches finalized',value:official.length,sub:`${fs.length} fixtures scheduled`,icon:CheckCircle2},{label:'Goals scored',value:official.reduce((s,f)=>s+(f.report?.homeScore??0)+(f.report?.awayScore??0),0),sub:'Official results only',icon:Target}].map(m=><div className="metric" key={m.label}><div><span>{m.label}</span><b>{m.value}</b><small>{m.sub}</small></div><m.icon size={23}/></div>)}</div>

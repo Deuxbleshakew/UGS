@@ -13,6 +13,9 @@ import {getSchedule,scheduleAction,scheduleAdmin} from './scheduling-server';
 import {getFriendlies,friendlyAction} from './friendlies-server';
 import {getAvatar,avatarInfo,saveAvatar,removeAvatar,AVATAR_UPLOAD_LIMIT} from './avatar-server';
 import {disableAccount,enableAccount,removeMember} from './user-management';
+import {listSquads,saveSquad,deleteSquad} from './squads';
+import {createTeamPlayoff,simulateTeamPlayoff,cancelTeamPlayoff,getTeamPlayoff} from './team-playoffs';
+import {answerParticipation,decideParticipation,isViewerByChoice} from './participation';
 
 type Member={id:string;tournament_id:string;user_id:string|null;email:string;username:string|null;name:string;role:string;manager_id:string|null;player_id:string|null};
 type Tournament={id:string;name:string;owner_id:string;config:string;created_at:string;awards:string|null;locked_at:string|null;revision:number};
@@ -29,7 +32,9 @@ async function membership(user:CurrentUser,tid:string){
   if(!row)fail("You do not have access to this tournament.",403);
   const {tournament_owner,...m}=row;
   // A saved membership role never grants admin authority to another account.
-  return {...m,role:tournamentRole(user.isOwner,user.userId,tournament_owner,m.role)};
+  const role=tournamentRole(user.isOwner,user.userId,tournament_owner,m.role);
+  // Someone who chose to be a viewer (or is waiting for approval to take part) is a viewer, whatever role was saved for them.
+  return {...m,role:role!=='admin'&&isViewerByChoice(user.userId)?'viewer':role};
 }
 const admin=(m:Member)=>{if(m.role!=="admin")fail("Only the organizer can do that.",403);};
 function participant(m:Member,f:Fixture,c:Config){return m.role==="admin"||(m.role==='manager'&&(f.kind==='player'?!!m.player_id&&[f.home,f.away].includes(m.player_id):c.clubs.some(club=>[f.home,f.away].includes(club.id)&&club.manager===m.manager_id)));}
@@ -111,6 +116,10 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
       if(request.method!=='POST')fail('Method not allowed.',405);
       return json(await changePassword(user,await body(request)));
     }
+    if(path[0]==='participation'&&path.length===1){
+      if(request.method!=='POST')fail('Method not allowed.',405);
+      return json(answerParticipation(user,await body(request)));
+    }
     if(path[0]==='avatar'){
       if(path.length===2&&request.method==='GET'){
         const a=getAvatar(path[1]);if(!a)fail('No picture.',404);
@@ -133,6 +142,10 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
       if(path.length===1&&path[0]==='state'&&request.method==='GET')return json({user,profile,onboardingRequired:true,tournaments:[],tournament:null});
       fail('Complete your profile before using tournament workflows.',403);
     }
+    if(path[0]==='accounts'&&path[1]==='participation'&&path.length===2){
+      if(request.method!=='POST')fail('Method not allowed.',405);
+      return json(decideParticipation(user,await body(request)));
+    }
     if(path[0]==='accounts'&&path.length===2&&['disable','enable'].includes(path[1])){
       if(request.method!=='POST')fail('Method not allowed.',405);
       const input=await body(request);return json(path[1]==='disable'?disableAccount(user,input):enableAccount(user,input));
@@ -147,7 +160,7 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
       fail('Method not allowed.',405);
     }
     if(path[0]==="state"&&request.method==="GET"){
-      const choices=await all<{id:string;name:string;role:string}>("SELECT t.id,t.name,CASE WHEN a.owner=1 AND t.owner_id=m.user_id THEN 'admin' WHEN m.role IN ('manager','participant') THEN 'manager' ELSE 'viewer' END AS role FROM tournaments t JOIN members m ON m.tournament_id=t.id JOIN accounts a ON a.id=m.user_id WHERE m.user_id=? ORDER BY t.created_at DESC",user.userId);
+      const choices=await all<{id:string;name:string;role:string}>("SELECT t.id,t.name,CASE WHEN a.owner=1 AND t.owner_id=m.user_id THEN 'admin' WHEN m.role IN ('manager','participant') THEN 'manager' ELSE 'viewer' END AS role FROM tournaments t JOIN members m ON m.tournament_id=t.id JOIN accounts a ON a.id=m.user_id WHERE m.user_id=? ORDER BY t.created_at DESC",user.userId).then(list=>isViewerByChoice(user.userId)?list.map(c=>c.role==="admin"?c:{...c,role:"viewer"}):list);
       const tid=url.searchParams.get("tournament")??choices[0]?.id;
       if(!tid)return json({user,profile,onboardingRequired:false,tournaments:[],tournament:null,seed,accountAccess:user.isOwner?accountDirectory(user):undefined});
       let member=await membership(user,tid);const t=await query("SELECT * FROM tournaments WHERE id=?",tid).first<Tournament>();if(!t)fail("Tournament not found.",404);
@@ -255,8 +268,17 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
       }
       if(request.method==="POST")return changeFixture(t,m,user,f,await body(request));
     }
+    if(path[2]==='team-playoffs'&&path.length===3&&request.method==='GET')return json(getTeamPlayoff(tid));
+    if(path[2]==='squads'&&path.length===3&&request.method==='GET')return json(listSquads(tid,user,{role:m.role,managerId:m.manager_id}));
+    if(path[2]==='squads'&&request.method==='POST'&&(path.length===3||(path.length===4&&path[3]==='delete'))){
+      const who={role:m.role,managerId:m.manager_id},input=await body(request);
+      return json(path.length===3?saveSquad(tid,user,who,input):deleteSquad(tid,user,who,input));
+    }
     if(request.method!=="POST")fail("Endpoint not found.",404);
     admin(m);const data=await body(request);
+    if(path[2]==='team-playoffs'&&path.length===3)return json(createTeamPlayoff(tid,user,data));
+    if(path[2]==='team-playoffs'&&path.length===4&&path[3]==='simulate')return json(simulateTeamPlayoff(tid,user,data));
+    if(path[2]==='team-playoffs'&&path.length===4&&path[3]==='cancel')return json(cancelTeamPlayoff(tid,user,data));
     if(path[2]==='matchweeks'&&path.length===3)return json(changeMatchweeks(tid,user,data));
     if(path[2]==='schedule'&&path.length===4)return json(scheduleAdmin(tid,user,path[3],data));
     if(path[2]==='users')return json(createPlayerUser(tid,user,data));

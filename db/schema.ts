@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, uniqueIndex, index, primaryKey, check } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, uniqueIndex, index, primaryKey, check, real } from "drizzle-orm/sqlite-core";
 import { sql } from 'drizzle-orm';
 
 export const accounts=sqliteTable('accounts',{
@@ -160,4 +160,31 @@ export const accountStatus = sqliteTable("account_status", {
   accountId: text("account_id").primaryKey().references(() => accounts.id),
   disabledAt: text("disabled_at").notNull(), reason: text("reason").notNull(),
   disabledBy: text("disabled_by").notNull().references(() => accounts.id),
+});
+
+// Milestone: participation choice (migration 0015). Documentation mirror; the runtime uses the SQL migration.
+export const accountParticipation = sqliteTable("account_participation", {
+  accountId: text("account_id").primaryKey().references(() => accounts.id),
+  wants: integer("wants").notNull(), status: text("status").notNull(),
+  answeredAt: text("answered_at").notNull(),
+  decidedBy: text("decided_by").references(() => accounts.id), decidedAt: text("decided_at"),
+});
+
+// Milestone: team vote playoff (migration 0016). Documentation mirror; the runtime uses the SQL migration.
+export const teamPlayoffs = sqliteTable("team_playoffs", {
+  id: text("id").primaryKey(), tournamentId: text("tournament_id").notNull().references(() => tournaments.id),
+  name: text("name").notNull(), directCount: integer("direct_count").notNull(), seed: text("seed").notNull(),
+  status: text("status").notNull(), version: integer("version").notNull(),
+  createdBy: text("created_by").notNull().references(() => accounts.id), createdAt: text("created_at").notNull(),
+  simulatedAt: text("simulated_at"), cancelledAt: text("cancelled_at"), cancelledBy: text("cancelled_by"), cancelReason: text("cancel_reason"),
+});
+export const teamPlayoffEntries = sqliteTable("team_playoff_entries", {
+  playoffId: text("playoff_id").notNull().references(() => teamPlayoffs.id), rank: integer("rank").notNull(),
+  team: text("team").notNull(), votes: integer("votes").notNull(), strength: real("strength").notNull(),
+});
+export const teamPlayoffTies = sqliteTable("team_playoff_ties", {
+  id: text("id").primaryKey(), playoffId: text("playoff_id").notNull().references(() => teamPlayoffs.id),
+  position: integer("position").notNull(), highRank: integer("high_rank").notNull(), lowRank: integer("low_rank").notNull(),
+  l1Low: integer("l1_low"), l1High: integer("l1_high"), l2Low: integer("l2_low"), l2High: integer("l2_high"),
+  pensLow: integer("pens_low"), pensHigh: integer("pens_high"), winnerRank: integer("winner_rank"),
 });

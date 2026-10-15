@@ -27,6 +27,23 @@ function record(d:DatabaseSync,actor:Actor,target:string|null,username:string|nu
 }
 export function isDisabled(accountId:string){return !!db().prepare('SELECT 1 FROM account_status WHERE account_id=?').get(accountId);}
 
+
+/** Close a person's open friendlies and withdraw their waiting kickoff proposals. Used when someone can no longer act (disabled, or no longer taking part). */
+export function closeOpenActivity(d:DatabaseSync,accountId:string,actor:Actor,friendlyReason:string,proposalReason:string){
+  const at=nowIso();
+  const open=d.prepare("SELECT id,proposed_at FROM friendly_invitations WHERE (inviter_id=? OR invitee_id=?) AND (status='pending' OR (status='accepted' AND proposed_at>?))").all(accountId,accountId,at) as {id:string;proposed_at:string}[];
+  for(const f of open){
+    d.prepare("UPDATE friendly_invitations SET status='cancelled',turn_id=NULL,version=version+1,updated_at=? WHERE id=?").run(at,f.id);
+    d.prepare('INSERT INTO friendly_events(id,invitation_id,actor_id,actor_name,at,action,reason,proposed_at) VALUES(?,?,?,?,?,?,?,?)').run(randomUUID(),f.id,actor.userId,actor.displayName,at,'cancelled',friendlyReason,f.proposed_at);
+  }
+  const props=d.prepare("SELECT id,tournament_id,fixture_id,proposed_at FROM schedule_proposals WHERE proposer_account_id=? AND status IN ('awaiting_opponent','awaiting_owner')").all(accountId) as {id:string;tournament_id:string;fixture_id:string;proposed_at:string}[];
+  for(const p of props){
+    d.prepare("UPDATE schedule_proposals SET status='withdrawn',version=version+1,decided_by=?,decided_reason=?,decided_at=? WHERE id=?").run(actor.userId,proposalReason,at,p.id);
+    d.prepare('INSERT INTO schedule_events(id,tournament_id,fixture_id,proposal_id,actor_id,actor_name,at,action,reason,proposed_at) VALUES(?,?,?,?,?,?,?,?,?,?)').run(randomUUID(),p.tournament_id,p.fixture_id,p.id,actor.userId,actor.displayName,at,'withdrawn',proposalReason,p.proposed_at);
+  }
+  return {friendliesClosed:open.length,proposalsWithdrawn:props.length};
+}
+
 export function disableAccount(actor:Actor,input:unknown){
   const data=disableSchema.parse(input);
   return tx(d=>{
@@ -46,20 +63,9 @@ export function disableAccount(actor:Actor,input:unknown){
       d.prepare("INSERT INTO discord_link_audit(id,account_id,discord_user_id,action,created_at) VALUES(?,?,?,'unlinked',?)").run(randomUUID(),a.id,link.discord_user_id,at);
     }
     d.prepare('DELETE FROM account_avatars WHERE account_id=?').run(a.id);
-    // Close every open friendly, pending or accepted-but-future, so nobody waits on or turns up for someone who cannot answer.
-    const open=d.prepare("SELECT id,proposed_at FROM friendly_invitations WHERE (inviter_id=? OR invitee_id=?) AND (status='pending' OR (status='accepted' AND proposed_at>?))").all(a.id,a.id,at) as {id:string;proposed_at:string}[];
-    for(const f of open){
-      d.prepare("UPDATE friendly_invitations SET status='cancelled',turn_id=NULL,version=version+1,updated_at=? WHERE id=?").run(at,f.id);
-      d.prepare('INSERT INTO friendly_events(id,invitation_id,actor_id,actor_name,at,action,reason,proposed_at) VALUES(?,?,?,?,?,?,?,?)').run(randomUUID(),f.id,actor.userId,actor.displayName,at,'cancelled','The organizer disabled an account involved in this friendly.',f.proposed_at);
-    }
-    // Withdraw scheduling proposals they made that are still waiting, so the opponent is not left hanging.
-    const props=d.prepare("SELECT id,tournament_id,fixture_id,proposed_at FROM schedule_proposals WHERE proposer_account_id=? AND status IN ('awaiting_opponent','awaiting_owner')").all(a.id) as {id:string;tournament_id:string;fixture_id:string;proposed_at:string}[];
-    for(const p of props){
-      d.prepare("UPDATE schedule_proposals SET status='withdrawn',version=version+1,decided_by=?,decided_reason=?,decided_at=? WHERE id=?").run(actor.userId,'The organizer disabled the proposer’s account.',at,p.id);
-      d.prepare('INSERT INTO schedule_events(id,tournament_id,fixture_id,proposal_id,actor_id,actor_name,at,action,reason,proposed_at) VALUES(?,?,?,?,?,?,?,?,?,?)').run(randomUUID(),p.tournament_id,p.fixture_id,p.id,actor.userId,actor.displayName,at,'withdrawn','The organizer disabled the proposer’s account.',p.proposed_at);
-    }
+    const {friendliesClosed:fc,proposalsWithdrawn:pw}=closeOpenActivity(d,a.id,actor,'The organizer disabled an account involved in this friendly.','The organizer disabled the proposer’s account.');
     record(d,actor,a.id,a.username,'disable-account');
-    return {ok:true,sessionsEnded:sessions,friendliesClosed:open.length,proposalsWithdrawn:props.length,discordUnlinked:!!link};
+    return {ok:true,sessionsEnded:sessions,friendliesClosed:fc,proposalsWithdrawn:pw,discordUnlinked:!!link};
   });
 }
 export function enableAccount(actor:Actor,input:unknown){

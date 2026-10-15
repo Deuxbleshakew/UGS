@@ -3,6 +3,7 @@ import type {DatabaseSync, SQLInputValue} from 'node:sqlite';
 import {z} from 'zod';
 import {database} from '@/scripts/local-store.mjs';
 import {digest} from '@/scripts/account-crypto.mjs';
+import {approveByGrant} from './participation';
 
 export const usernameSchema = z.string().trim().min(3).max(24)
   .regex(/^[a-zA-Z0-9_]+$/, 'Use letters, numbers and underscores only.').transform(value => value.toLowerCase());
@@ -47,13 +48,13 @@ function singlePlayer(members: Member[]): string | null {
   return ids[0] ?? null;
 }
 
-export type AccountAccessRow = {key: string; accountId: string | null; memberId: string | null; playerId: string | null; name: string; email: string; username: string | null; owner: boolean; status: 'active' | 'pending'; disabled?: boolean; disabledReason?: string | null};
+export type AccountAccessRow = {key: string; accountId: string | null; memberId: string | null; playerId: string | null; name: string; email: string; username: string | null; owner: boolean; status: 'active' | 'pending'; disabled?: boolean; disabledReason?: string | null; participation?: 'unanswered' | 'yes' | 'no' | 'pending'};
 export function accountDirectory(actor: Actor): AccountAccessRow[] {
   requireOwner(actor);
-  const active = rows<{id: string; name: string; email: string; owner: number; username: string | null; player_id: string | null; disabled_reason: string | null; disabled_at: string | null}>(
-    'SELECT a.id,a.name,a.email,a.owner,u.username,u.player_id,s.reason AS disabled_reason,s.disabled_at FROM accounts a LEFT JOIN account_usernames u ON u.account_id=a.id LEFT JOIN account_status s ON s.account_id=a.id ORDER BY a.owner DESC,a.name,a.id');
+  const active = rows<{id: string; name: string; email: string; owner: number; username: string | null; player_id: string | null; disabled_reason: string | null; disabled_at: string | null; participation: 'unanswered' | 'yes' | 'no' | 'pending'}>(
+    `SELECT a.id,a.name,a.email,a.owner,u.username,u.player_id,s.reason AS disabled_reason,s.disabled_at,CASE WHEN p.account_id IS NULL THEN 'unanswered' WHEN p.wants=0 THEN 'no' WHEN p.status='pending' THEN 'pending' ELSE 'yes' END AS participation FROM accounts a LEFT JOIN account_usernames u ON u.account_id=a.id LEFT JOIN account_status s ON s.account_id=a.id LEFT JOIN account_participation p ON p.account_id=a.id ORDER BY a.owner DESC,a.name,a.id`);
   const pending = rows<Member>('SELECT m.* FROM members m JOIN tournaments t ON t.id=m.tournament_id WHERE t.owner_id=? AND m.user_id IS NULL AND NOT EXISTS(SELECT 1 FROM accounts a WHERE m.email<>\'\' AND a.email=m.email) ORDER BY m.name,m.id', actor.userId);
-  const result: AccountAccessRow[] = active.map(a => ({key: 'account:' + a.id, accountId: a.id, memberId: null, playerId: a.player_id, name: a.name, email: a.email, username: a.username, owner: a.owner === 1, status: 'active', disabled: !!a.disabled_at, disabledReason: a.disabled_reason}));
+  const result: AccountAccessRow[] = active.map(a => ({key: 'account:' + a.id, accountId: a.id, memberId: null, playerId: a.player_id, name: a.name, email: a.email, username: a.username, owner: a.owner === 1, status: 'active', disabled: !!a.disabled_at, disabledReason: a.disabled_reason, participation: a.participation}));
   const seen = new Set<string>();
   for (const m of pending) {
     const key = m.username ? 'username:' + m.username : 'email:' + m.email;
@@ -133,6 +134,7 @@ function grant(tid: string, actor: Actor, data: {playerId: string; username: str
   const linked = one<{manager_id: string}>('SELECT manager_id FROM player_links WHERE tournament_id=? AND player_id=?', tid, player.id);
   if (!existing) db().prepare("INSERT INTO members(id,tournament_id,user_id,email,name,role,manager_id,player_id,username) VALUES(?,?,?,?,?,'manager',?,?,?)")
     .run(randomUUID(), tid, reservation.account_id, email, player.name, linked?.manager_id ?? null, player.id, data.username);
+  if (reservation.account_id) approveByGrant(db(), actor.userId, reservation.account_id);
   record(actor, data.username, existing ? 'refresh-player-access' : 'authorize-player', reservation.account_id);
   db().prepare('INSERT INTO audit(id,tournament_id,actor_id,actor_name,at,action,reason,"before","after") VALUES(?,?,?,?,?,?,?,?,?)')
     .run(randomUUID(), tid, actor.userId, actor.displayName, new Date().toISOString(), 'authorize-player', 'Owner authorized username-based player access.', 'null', JSON.stringify({playerId: player.id, username: data.username, existingMembership: !!existing}));

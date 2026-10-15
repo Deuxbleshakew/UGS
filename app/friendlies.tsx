@@ -55,7 +55,7 @@ export default function Friendlies({timezone}:{timezone?:string}){
     </div>;
   };
   return <section className="panel friendlies-panel" aria-labelledby="friendlies-heading">
-    <h2 id="friendlies-heading">Friendlies</h2>
+    <h2 id="friendlies-heading" className="visually-hidden">Friendlies</h2>
     <p className="fine-print">Casual matches between two players. They don’t affect Elo, standings, awards or qualification, and need no result or proof. Times show in {zone}.</p>
     {error&&<p className="inline-error" role="alert">{error}</p>}
     {!data.me.eligible?<p className="notice">{data.me.reason??'Friendlies are not available to you yet.'}</p>:<>

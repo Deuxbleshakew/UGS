@@ -8,6 +8,7 @@ import {api} from './ui';
 import DiscordConnection from './discord-connection';
 import AvatarPicker from './avatar-picker';
 import ChangePassword from './change-password';
+import {ParticipationSetting} from './participation-choice';
 
 export default function MyProfile({profile,username,userId,onRefresh}:{profile:ProfileState;username:string|null;userId:string;onRefresh:()=>Promise<unknown>}){
   const [data,setData]=useState<ProfileData>(profile.data),[query,setQuery]=useState(''),[other,setOther]=useState(''),[kind,setKind]=useState<'football'|'community'>('football'),[otherZone,setOtherZone]=useState(false);
@@ -52,6 +53,7 @@ export default function MyProfile({profile,username,userId,onRefresh}:{profile:P
       <button className="btn primary" disabled={busy}>{busy?'Saving…':'Save profile'}</button>
     </fieldset></form>
     {error&&<p className="notice error" role="alert">{error}</p>}{message&&<p className="notice" role="status">{message}</p>}
+    {!profile.isOwner&&<ParticipationSetting value={profile.participation} participant={profile.participant} onChanged={onRefresh}/>}
     <AvatarPicker userId={userId} name={data.displayName||username||'You'}/>
     <DiscordConnection/>
     <ChangePassword/>

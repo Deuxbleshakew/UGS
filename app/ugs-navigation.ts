@@ -1,4 +1,4 @@
-export type UgsView = 'home' | 'matchroom' | 'overview' | 'guide' | 'playoffs' |
+export type UgsView = 'home' | 'matchroom' | 'overview' | 'guide' | 'playoffs' | 'teamplayoffs' | 'squad' |
   'fixtures' | 'standings' | 'clubs' | 'statistics' | 'awards' | 'elo' |
   'friendlies' | 'history' | 'tiquicia' | 'profile' | 'admin' | 'review' | 'settings';
 
@@ -16,6 +16,8 @@ export const ugsViews: Record<UgsView, ViewDefinition> = {
   overview: {label: 'Overview', path: 'matchroom/club-champions', description: 'Your selected tournament, from the draw to the final result.', section: 'matchroom'},
   guide: {label: 'Rules & Guide', path: 'matchroom/club-champions/guide', description: 'Competition guidance and published rules.', section: 'matchroom', planned: true},
   playoffs: {label: 'Qualification', path: 'matchroom/club-champions/qualification', description: 'Elo-seeded home-and-away playoffs and direct qualification.', section: 'matchroom'},
+  teamplayoffs: {label: 'Team playoffs', path: 'matchroom/club-champions/team-playoffs', description: 'Community team vote and the simulated home-and-away playoff.', section: 'matchroom'},
+  squad: {label: 'Squad builder', path: 'matchroom/club-champions/squad', description: 'Build your starting tactic and squad tactics. Opens after the draw.', section: 'matchroom'},
   fixtures: {label: 'Fixtures & results', path: 'matchroom/club-champions/fixtures', description: 'Schedule matches, submit evidence and follow official results.', section: 'matchroom'},
   standings: {label: 'League table', path: 'matchroom/club-champions/table', description: 'Standings built from finalized club results.', section: 'matchroom'},
   clubs: {label: 'Clubs & managers', path: 'matchroom/club-champions/clubs', description: 'Club assignments in your selected tournament.', section: 'matchroom'},
@@ -31,7 +33,7 @@ export const ugsViews: Record<UgsView, ViewDefinition> = {
   settings: {label: 'Tournament setup', path: 'admin/setup', description: 'Manage player access, imports and tournament exports.', section: 'admin'},
 };
 
-export const competitionViews: readonly UgsView[] = ['overview', 'guide', 'playoffs', 'fixtures', 'standings', 'clubs', 'statistics', 'awards'];
+export const competitionViews: readonly UgsView[] = ['overview', 'guide', 'playoffs', 'teamplayoffs', 'squad', 'fixtures', 'standings', 'clubs', 'statistics', 'awards'];
 export const matchroomViews: readonly UgsView[] = ['matchroom', ...competitionViews, 'elo', 'friendlies', 'history'];
 export const adminViews: readonly UgsView[] = ['admin', 'review', 'settings'];
 

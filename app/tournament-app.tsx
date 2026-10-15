@@ -1,6 +1,6 @@
 'use client';
 import {useEffect, useRef, useState, type MouseEvent} from 'react';
-import {Activity, AlertCircle, ArrowDownToLine, ArrowRight, BarChart3, BookOpen, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, Clock3, FileCheck2, Gamepad2, GitBranch, Home, LayoutDashboard, Loader2, LockKeyhole, LogOut, Menu, Plus, Settings2, Shield, ShieldCheck, Trophy, UserRound, Users, X, type LucideIcon} from 'lucide-react';
+import {Activity, AlertCircle, ArrowDownToLine, ArrowRight, BarChart3, BookOpen, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, Clock3, Dices, FileCheck2, Gamepad2, GitBranch, Home, LayoutDashboard, Loader2, LockKeyhole, LogOut, Menu, Plus, Settings2, Shield, ShieldCheck, Trophy, UserRound, Users, X, type LucideIcon} from 'lucide-react';
 import {type Config, type Fixture} from '@/lib/domain';
 import initialConfig from '@/data/draw-config.json';
 import {api, Empty, Modal, type AppState} from './ui';
@@ -13,15 +13,16 @@ import MyProfile from './my-profile';
 import MatchweekPanel from './matchweek-panel';
 import ScheduleSettings from './schedule-settings';
 import Friendlies from './friendlies';
+import {ParticipationQuestion} from './participation-choice';
 import {adminViews, competitionViews, isUgsView, matchroomViews, ugsViews, viewFromHash, viewHref, type UgsView} from './ugs-navigation';
 
 const icons: Record<UgsView, LucideIcon> = {
   home: Home, matchroom: Gamepad2, overview: LayoutDashboard, guide: BookOpen,
-  playoffs: GitBranch, fixtures: CalendarDays, standings: BarChart3, clubs: Shield,
+  playoffs: GitBranch, teamplayoffs: Dices, squad: Users, fixtures: CalendarDays, standings: BarChart3, clubs: Shield,
   statistics: Activity, awards: Trophy, elo: Users, friendlies: Gamepad2, history: Clock3,
   tiquicia: Shield, profile: UserRound, admin: ShieldCheck, review: FileCheck2, settings: Settings2,
 };
-const existingViews: readonly UgsView[] = ['overview', 'playoffs', 'fixtures', 'standings', 'clubs', 'statistics', 'awards', 'elo', 'review', 'settings'];
+const existingViews: readonly UgsView[] = ['overview', 'playoffs', 'teamplayoffs', 'squad', 'fixtures', 'standings', 'clubs', 'statistics', 'awards', 'elo', 'review', 'settings'];
 
 export default function TournamentApp() {
   const [state, setState] = useState<AppState | null>(null);
@@ -113,6 +114,7 @@ export default function TournamentApp() {
     </a>;
   }
 
+  if(state?.onboardingRequired&&state.profile?.askInterest)return <main className="ugs-onboarding"><UgsBrand/><ParticipationQuestion onDone={()=>refresh()}/><button className="btn secondary" onClick={async()=>{try{await api('auth/logout',{});window.location.assign('/login');}catch(e){setError((e as Error).message);}}}>Sign out</button></main>;
   if(state?.onboardingRequired&&state.profile)return <main className="ugs-onboarding"><UgsBrand/><p className="notice">Complete your profile to enter Union Gaming. Your account and history are preserved.</p><MyProfile key={state.profile.version} profile={state.profile} username={state.user.username} userId={state.user.userId} onRefresh={()=>refresh()}/><button className="btn secondary" onClick={async()=>{try{await api('auth/logout',{});window.location.assign('/login');}catch(e){setError((e as Error).message);}}}>Sign out</button>{error&&<p role="alert">{error}</p>}</main>;
   return <div className="app-shell ugs-app">
     <a className="ugs-skip-link" href="#ugs-main" onClick={event => {event.preventDefault(); mainRef.current?.focus();}}>Skip to content</a>
@@ -147,6 +149,7 @@ export default function TournamentApp() {
         {loading && <div className="notice" role="status"><Loader2 className="spin" size={18} />Opening Union Gaming…</div>}
         {error && <div className="notice error" role="alert"><AlertCircle size={18} /><span>{error}</span>{error.includes('Sign in') ? <a href="/login">Sign in</a> : <button onClick={() => {setError(''); setLoading(true); refresh(tournament?.id).catch(e => setError(e.message)).finally(() => setLoading(false));}}>Retry</button>}<button className="icon-btn" onClick={() => setError('')} aria-label="Dismiss error"><X size={17} /></button></div>}
         {!loading && state && <>
+          {view === 'home' && (state.profile?.participation === 'no' || state.profile?.participation === 'pending') && <p className="notice viewer-note" role="status">You are following as a viewer. More for followers is coming soon. Want to play? Ask to take part in My Profile.</p>}
           {view !== 'home' && <div className="page-heading"><div><div className="eyebrow">{competition ? 'MATCHROOM / CLUB CHAMPIONS' : inAdmin ? 'UGS / OWNER WORKSPACE' : 'UNION GAMING SOCIETY'}</div><h1>{view === 'overview' ? 'Club Champions' : definition.label}</h1><p>{definition.description}</p></div>{existing && !denied && <div className="heading-actions">{ready && <button className="btn secondary" onClick={() => download(view === 'awards' ? 'awards' : view === 'standings' ? 'clubs' : 'matches')}><ArrowDownToLine size={16} />Export CSV</button>}{(admin || (!ready && owner)) && <button className="btn primary" onClick={() => open('fixture')}><Plus size={17} />{ready ? 'Add fixture' : 'Create tournament'}</button>}</div>}</div>}
           {existing && !denied && <div className="ugs-workspace-strip"><div><span className="eyebrow">SELECTED TOURNAMENT</span><strong>{tournament?.name ?? 'No tournament selected'}</strong></div><button className="btn secondary" onClick={() => open('switch')}><Shield size={16} />Your tournaments <ChevronDown size={15} /></button></div>}
           {(view==='fixtures'||view==='overview')&&<MatchweekPanel key={tournament?.id} state={state} onRefresh={()=>refresh(tournament?.id)}/>}
@@ -156,7 +159,7 @@ export default function TournamentApp() {
             : existing ? <Views view={view} state={state} config={config} fixtures={fixtures} onNavigate={navigate} onOpenMatch={openMatch} onDialog={open} onExport={download} onRefresh={() => refresh(tournament?.id)} />
             : <UgsSections view={view} state={state} onNavigate={navigate} onDialog={open} />}
         </>}
-        <footer className="app-footer"><span><strong>UNION GAMING</strong><b>Costa Rican roots. Friends worldwide.</b></span><span>UGS · Union Gaming Society</span></footer>
+        <footer className="app-footer"><span><strong>UNION GAMING</strong></span><span>UGS · Union Gaming Society</span></footer>
       </main>
     </div>
     {toast && <div className="toast" role="status"><CheckCircle2 size={18} />{toast}<button className="icon-btn" aria-label="Dismiss message" onClick={() => setToast('')}><X size={16} /></button></div>}

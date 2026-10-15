@@ -7,6 +7,7 @@ import {managerPlayer} from './competition-server';
 import {missingProfile,profileSchema,type ProfileData} from './profile';
 import {getSettings,overlaps,sideOf} from './scheduling-server';
 import {avatarVersion} from './avatar-server';
+import {isViewerByChoice} from './participation';
 import {zonedLocalToUtc,zoneMessages} from './timezone';
 
 // Friendly invitations. A friendly is not a fixture: it never touches Elo, standings, awards, proof or results.
@@ -34,6 +35,7 @@ export function eligibility(accountId:string):Eligibility{
   const name=p.data.displayName||p.a.name,timezone=p.data.timezone;
   if(db().prepare('SELECT 1 FROM account_status WHERE account_id=?').get(accountId))return {ok:false,name,timezone,reason:'This account is disabled.'};
   const participant=!!db().prepare("SELECT 1 FROM members WHERE user_id=? AND role IN ('manager','participant') LIMIT 1").get(accountId);
+  if(p.a.owner!==1&&isViewerByChoice(accountId))return {ok:false,name,timezone,reason:'You chose to follow as a viewer. You can change that in My Profile; the organizer approves it.'};
   if(!participant&&p.a.owner!==1)return {ok:false,name,timezone,reason:'Friendlies are open to participants. Viewers cannot take part yet.'};
   if(p.a.owner!==1&&missingProfile(p.data,p.a.username,true).length)return {ok:false,name,timezone,reason:'Finish your profile first.'};
   return {ok:true,name,timezone};

@@ -14,7 +14,7 @@ export const profileSchema=z.object({
   if(new Set(value.platforms).size!==value.platforms.length)ctx.addIssue({code:'custom',path:['platforms'],message:'Remove duplicate platforms.'});
 });
 export type ProfileData=z.infer<typeof profileSchema>;
-export type ProfileState={data:ProfileData;version:number;participant:boolean;missing:string[];complete:boolean};
+export type ProfileState={data:ProfileData;version:number;participant:boolean;missing:string[];complete:boolean;participation:'unanswered'|'yes'|'no'|'pending';askInterest:boolean;isOwner:boolean};
 export function missingProfile(data:ProfileData,username:string|null,participant:boolean){
   const missing:string[]=[];
   if(!username)missing.push('Ask the owner to assign your username');

@@ -3,14 +3,19 @@ import {z} from 'zod';
 import {profileSchema,missingProfile,type ProfileData,type ProfileState} from './profile';
 import type {CurrentUser} from './auth';
 import {AccountAccessError} from './account-access';
+import {participationOf} from './participation';
 
 export function getProfile(user:CurrentUser):ProfileState{
   const db=database();
   const row=db.prepare('SELECT data,version FROM account_profiles WHERE account_id=?').get(user.userId) as {data:string;version:number}|undefined;
   const data:ProfileData=row?profileSchema.parse(JSON.parse(row.data)):{displayName:user.displayName,teams:[],primary:null,platforms:[],timezone:'',psnId:'',eaId:''};
-  const participant=!!db.prepare("SELECT id FROM members WHERE user_id=? AND role IN ('manager','participant') LIMIT 1").get(user.userId);
-  const missing=missingProfile(data,user.username,participant);
-  return {data,version:row?.version??0,participant,missing,complete:missing.length===0};
+  const participation=participationOf(user.userId),viewerByChoice=participation==='no'||participation==='pending';
+  const participant=!viewerByChoice&&!!db.prepare("SELECT id FROM members WHERE user_id=? AND role IN ('manager','participant') LIMIT 1").get(user.userId);
+  // Someone who chose to be a viewer has no profile form to fill in: only the username (set by the owner) is needed.
+  const missing=viewerByChoice?(user.username?[]:['Ask the owner to assign your username']):missingProfile(data,user.username,participant);
+  // Ask the question once, to accounts that were never asked and still have onboarding to finish. Finished accounts are not interrupted.
+  const askInterest=!user.isOwner&&participation==='unanswered'&&missing.length>0&&!!user.username;
+  return {data,version:row?.version??0,participant,missing,complete:missing.length===0,participation,askInterest,isOwner:user.isOwner};
 }
 export function saveProfile(user:CurrentUser,input:unknown){
   const {data,version}=z.object({data:profileSchema,version:z.number().int().min(0)}).parse(input);

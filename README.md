@@ -49,6 +49,8 @@ the pre-release validation details. The live deployment uses commit
 - Community player directory and lifetime Elo rankings across the organizer's tournaments.
 - Elo-seeded player playoffs for 2–128 entrants, with two legs, byes and any qualifying target.
 - Aggregate winners, penalties after a tied return leg, round advancement and qualifier CSVs.
+- Team vote playoff: the community's final team vote order is stored, the top teams qualify directly and the rest are paired best-v-worst in simulated home-and-away ties (owner creates, runs once, can cancel with a reason; no players or Elo involved). See [CLAUDE-TEAM-PLAYOFF-HANDOFF.md](docs/CLAUDE-TEAM-PLAYOFF-HANDOFF.md).
+- Squad builder (opens after the draw): pitch with roles and instructions, up to five tactics per manager, UGS share codes and a stored, checked EA FC tactic code. See [CLAUDE-SQUAD-BUILDER-HANDOFF.md](docs/CLAUDE-SQUAD-BUILDER-HANDOFF.md).
 
 See [PLAYER-PLAYOFFS.md](docs/PLAYER-PLAYOFFS.md) for player setup, seeding and Elo rules.
 
@@ -100,3 +102,5 @@ health endpoint returned HTTP 200 with `status: ok`, and the sign-in page loads.
 No functional tests were run, per your instruction.
 
 **Milestone 4D — user management and change password (migration 0014).** The owner can disable and re-enable accounts (reason and confirmation required; the owner account cannot be disabled) and remove a person from one tournament. Disabling signs the person out everywhere, unlinks Discord, deletes their profile picture, closes their open friendlies and withdraws their waiting kickoff proposals; results, Elo, fixtures, memberships and history are untouched. Removing a member deletes only their access to that tournament and keeps a snapshot in the audit log. Every signed-in user can change their own password in My Profile (current password required, rate limited, other devices signed out).
+
+**Milestone 4E — "Do you want to take part?" (migration 0015).** At first sign-in, an account that has never been asked and still has onboarding to finish is asked whether it wants to take part in the UCL tournament. Yes continues to the player profile. No makes the person a viewer: no profile form, no friendlies, no match actions, and a "more coming soon" note on Home. Their saved role is not changed; it is capped at viewer while the choice says so. Switching from viewer back to player is a request the owner approves (or implicitly approves by granting player access). Accounts that already finished their profile are not interrupted and can switch to viewer in My Profile; the owner is never asked.
