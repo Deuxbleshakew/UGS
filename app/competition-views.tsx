@@ -36,6 +36,7 @@ export function PlayoffsView({state,onRefresh,onOpenMatch,onExport}:Props){
       const survivors=ties.length+p.automatic_qualifiers.length;
       return <section className="panel playoff-event" key={p.id}>
         <div className="section-heading"><div><span className="eyebrow">{p.status==='complete'?'COMPLETE':`ROUND ${p.round}`}</span><h2>{p.name}</h2><p className="muted">{p.entrants.length} entrants · {p.automatic_qualifiers.length} direct · {p.target===1?'One champion':`${p.target} qualifying places`} · Elo {p.elo_mode==='tie'?'per tie':'per leg'}</p></div>{admin&&p.status==='active'&&<button className="btn primary" disabled={busy||!canAdvance} onClick={()=>advance(p)}>{survivors===p.target?(p.target===1?'Confirm champion':'Confirm qualifiers'):'Create next round'}<ArrowRight size={16}/></button>}</div>
+        {admin&&p.status==='active'&&<CancelPlayoff tid={state!.tournament!.id} p={p} onDone={onRefresh}/>}
         {p.status==='active'&&p.automatic_qualifiers.length>0&&<div className="qualified-players"><ShieldCheck size={25}/><div><b>Already qualified · top {p.automatic_qualifiers.length} by Elo</b><p>{p.automatic_qualifiers.map(pid=>p.entrants.find(e=>e.id===pid)?.name).join(' · ')}</p><small>These places are secured. The remaining {p.target-p.automatic_qualifiers.length} places come from the playoff bracket.</small></div></div>}
         {p.status==='complete'&&<div className="qualified-players"><Trophy size={25}/><div><b>{p.target===1?'Champion':'Qualified players'}</b><p>{p.qualified.map(pid=>p.entrants.find(e=>e.id===pid)?.name).join(' · ')}</p></div><button className="btn secondary" onClick={()=>onExport('qualifiers')}><ArrowDownToLine size={15}/>Export qualifiers</button></div>}
         {Array.from({length:p.round},(_,i)=>i+1).map(round=><div className="playoff-round" key={round}><h3>Round {round}</h3><div className="tie-grid">{p.ties.filter(t=>t.round===round).map(t=>{
@@ -67,4 +68,14 @@ function CreatePlayoff({state,onClose,onSaved}:{state:AppState;onClose:()=>void;
     {error&&<p className="notice error" role="alert">{error}</p>}
     <div className="review-actions"><button className="btn secondary" onClick={onClose} disabled={busy}>Cancel</button>{preview?<button className="btn primary" disabled={busy||!valid||!name.trim()} onClick={create}><ShieldCheck size={16}/>{busy?'Creating…':'Create these fixtures'}</button>:<button className="btn primary" disabled={!valid||!name.trim()} onClick={()=>setPreview(true)}>Preview seeds & pairings<ArrowRight size={16}/></button>}</div>
   </div></Modal>;
+}
+
+function CancelPlayoff({tid,p,onDone}:{tid:string;p:Playoff;onDone:()=>Promise<unknown>}){
+  const [open,setOpen]=useState(false),[why,setWhy]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');
+  async function run(){setBusy(true);setError('');try{await api(`tournament/${tid}/playoffs/${p.id}/cancel`,{version:p.version,reason:why});await onDone();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
+  if(!open)return <p><button type="button" className="text-btn" onClick={()=>setOpen(true)}>Remove this playoff and its fixtures</button></p>;
+  return <div className="notice"><p>This removes every fixture of the playoff. It only works while no result or proof has been submitted.</p>
+    <label className="field">Reason<input value={why} maxLength={300} onChange={e=>setWhy(e.target.value)} placeholder="Why is it being removed?"/></label>
+    <div className="sched-actions"><button type="button" className="btn primary" disabled={busy||why.trim().length<3} onClick={()=>void run()}>{busy?'Removing…':'Remove playoff'}</button><button type="button" className="btn secondary" disabled={busy} onClick={()=>setOpen(false)}>Keep it</button></div>
+    {error&&<p className="inline-error" role="alert">{error}</p>}</div>;
 }

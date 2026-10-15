@@ -1,6 +1,7 @@
 import Image from 'next/image';
 import {ArrowRight, CalendarDays, Gamepad2, Globe2, Shield, Trophy, Users} from 'lucide-react';
 import type {AppState} from './ui';
+import {RulesGuide, HistoryView} from './guide-history';
 import {ugsViews, viewHref, type UgsView} from './ugs-navigation';
 
 type Props = {view: UgsView; state: AppState | null; onNavigate: (view: string) => void; onDialog: (type: string) => void};
@@ -12,17 +13,17 @@ function Destination({view, title, description}: {view: UgsView; title: string; 
 }
 
 const plannedCopy: Partial<Record<UgsView, {title: string; description: string}>> = {
-  guide: {title: 'A shared guide to the competition.', description: 'Published rules, match guides and acknowledgments will live here. The owner has not published a rules guide in this section yet.'},
-  history: {title: 'Our moments, kept together.', description: 'Published season recaps, ceremonies and highlights will live here. No history entries have been published in this section yet.'},
   profile: {title: 'Your place in Union Gaming.', description: 'Profile editing, gaming IDs and favorite teams are planned. Your current account and sign-in remain available as before.'},
 };
 
 export default function UgsSections({view, state, onNavigate, onDialog}: Props) {
+  if (view === 'guide') return <RulesGuide state={state} />;
+  if (view === 'history') return <HistoryView state={state} />;
   const planned = plannedCopy[view];
   if (planned) return <section className="panel ugs-planned-page">
     <span className="ugs-planned-label">Planned · not available yet</span>
     <h2>{planned.title}</h2><p>{planned.description}</p>
-    <a className="btn primary" href={viewHref(view === 'profile' ? 'home' : 'matchroom')}>Back to {view === 'profile' ? 'UGS Home' : 'Matchroom'} <ArrowRight size={16} /></a>
+    <a className="btn primary" href={viewHref(view === 'profile' ? 'home' : 'matchroom')}>Back to {view === 'profile' ? 'UGS Home' : 'UCL'} <ArrowRight size={16} /></a>
   </section>;
 
   if (view === 'home') return <>
@@ -30,23 +31,23 @@ export default function UgsSections({view, state, onNavigate, onDialog}: Props) 
       <div className="ugs-hero-copy"><div className="eyebrow">UNION GAMING SOCIETY</div>
         <h1>Costa Rican roots.<br /><span>United by gaming.</span></h1>
         <p>From Costa Rica to the United States and beyond. A home for our friends, our teams and the games we share.</p>
-        <div className="ugs-actions"><a className="btn ugs-white-button" href={viewHref('matchroom')}>Enter Matchroom <ArrowRight size={17} /></a><a className="ugs-hero-link" href={viewHref('tiquicia')}>Meet RB Tiquicia <ArrowRight size={16} /></a></div>
+        <div className="ugs-actions"><a className="btn ugs-white-button" href={viewHref('matchroom')}>Enter UCL <ArrowRight size={17} /></a><a className="ugs-hero-link" href={viewHref('tiquicia')}>Meet RB Tiquicia <ArrowRight size={16} /></a></div>
       </div>
       <div className="ugs-hero-art" aria-hidden="true"><div className="ugs-flag-lines" /><Image src="/brand/ugs-initials.png" alt="" width={1774} height={887} unoptimized priority /><span>UNION GAMING</span></div>
     </section>
     <div className="ugs-section-heading"><div><span className="eyebrow">YOUR COMMUNITY</span><h2>Find your next game.</h2></div><Globe2 size={22} aria-hidden="true" /></div>
     <div className="ugs-feature-grid">
-      <article className="panel ugs-feature-card"><span className="ugs-feature-icon"><Trophy size={25} /></span><span className="eyebrow">COMPETE</span><h2>Matchroom</h2><p>Follow Club Champions, find fixtures and see how our players rank. Your competition workspace is here.</p><a className="text-btn" href={viewHref('matchroom')}>Open Matchroom <ArrowRight size={17} /></a></article>
+      <article className="panel ugs-feature-card"><span className="ugs-feature-icon"><Trophy size={25} /></span><span className="eyebrow">COMPETE</span><h2>UCL</h2><p>Follow Club Champions, find fixtures and see how our players rank. Your competition workspace is here.</p><a className="text-btn" href={viewHref('matchroom')}>Open UCL <ArrowRight size={17} /></a></article>
       <article className="panel ugs-feature-card ugs-team-card"><Image src="/brand/rb-tiquicia.png" alt="RB Tiquicia crest" width={640} height={641} unoptimized className="ugs-team-card-crest" /><span className="eyebrow">PLAY TOGETHER</span><h2>RB Tiquicia</h2><p>Our community’s Pro Clubs team. Shared roots. One team.</p><a className="text-btn" href={viewHref('tiquicia')}>Visit the team <ArrowRight size={17} /></a></article>
     </div>
-    <div className="ugs-community-note"><Gamepad2 size={22} aria-hidden="true" /><p><b>Union Gaming.</b> Our organization brings the community together. Matchroom is where we follow our competitions.</p></div>
+    <div className="ugs-community-note"><Gamepad2 size={22} aria-hidden="true" /><p><b>Union Gaming.</b> Our organization brings the community together. UCL is where we follow our competitions.</p></div>
   </>;
 
   if (view === 'matchroom') return <>
     <section className="ugs-competition-banner"><div><span className="eyebrow">A UGS COMPETITION</span><h2>Club Champions</h2><p>Qualification, fixtures, standings and the performances behind every result.</p><a className="btn ugs-white-button" href={viewHref('overview')}>Open competition <ArrowRight size={17} /></a></div><Trophy size={105} strokeWidth={1} aria-hidden="true" /></section>
     <div className="ugs-context-strip"><span>Selected tournament</span><strong>{state?.tournament?.name ?? 'No tournament available'}</strong>{!!state?.tournaments.length && <button className="text-btn" onClick={() => onDialog('switch')}>Switch tournament <ArrowRight size={15} /></button>}</div>
     <div className="ugs-destination-grid"><Destination view="playoffs" title="Qualification" description="Follow the seeded player playoffs and direct places." /><Destination view="fixtures" title="Fixtures & results" description="Open the match workspace to schedule or report a result." /><Destination view="elo" title="Players & Elo" description="See community player rankings and recent form." /><Destination view="standings" title="League table" description="Follow finalized club results in the current tournament." /></div>
-    <section className="panel ugs-planned-strip"><h2>Coming to Matchroom</h2><p>These sections are planned and not available for use yet.</p><div>{(['history', 'guide'] as const).map(key => <a key={key} href={viewHref(key)}>{ugsViews[key].label}<span className="ugs-planned-label">Planned</span><ArrowRight size={16} /></a>)}</div></section>
+    <section className="panel ugs-planned-strip"><h2>Coming to UCL</h2><p>These sections are planned and not available for use yet.</p><div>{(['history', 'guide'] as const).map(key => <a key={key} href={viewHref(key)}>{ugsViews[key].label}<span className="ugs-planned-label">Planned</span><ArrowRight size={16} /></a>)}</div></section>
   </>;
 
   if (view === 'tiquicia') return <>

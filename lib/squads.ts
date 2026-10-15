@@ -20,6 +20,7 @@ const saveSchema=z.object({
   slots:z.array(z.object({ea:z.number().int().min(0).max(15),player:z.string().trim().max(40)})).length(11),
   version:z.number().int().min(1).optional(),
 });
+const openSchema=z.object({open:z.boolean()});
 const deleteSchema=z.object({id:z.string().min(1)});
 type Config={clubs?:{id:string;name:string;manager?:string}[];managers?:{id:string;name:string}[]};
 function config(d:DatabaseSync,tid:string):Config{
@@ -28,13 +29,15 @@ function config(d:DatabaseSync,tid:string):Config{
   try{return JSON.parse(t!.config) as Config;}catch{return {};}
 }
 export const drawDone=(c:Config)=>!!c.clubs?.some(x=>x.manager);
+const openedEarly=(d:DatabaseSync,tid:string)=>(d.prepare('SELECT open FROM squad_access WHERE tournament_id=?').get(tid) as {open:number}|undefined)?.open===1;
+const isOpen=(d:DatabaseSync,tid:string,c:Config)=>drawDone(c)||openedEarly(d,tid);
 const canBuild=(w:Who)=>w.role==='admin'||w.role==='manager';
 export function listSquads(tid:string,actor:Actor,who:Who){
-  const d=db(),c=config(d,tid),drawn=drawDone(c);
+  const d=db(),c=config(d,tid),drawn=drawDone(c),open=isOpen(d,tid,c);
   const clubs=(id:string|null)=>id?(c.clubs??[]).filter(x=>x.manager===id).map(x=>x.name):[];
-  const rows=drawn?d.prepare('SELECT s.*,a.name AS owner_name,m.manager_id FROM squads s JOIN accounts a ON a.id=s.owner_id LEFT JOIN members m ON m.tournament_id=s.tournament_id AND m.user_id=s.owner_id WHERE s.tournament_id=? ORDER BY a.name,s.slot_no').all(tid) as Record<string,unknown>[]:[];
+  const rows=open?d.prepare('SELECT s.*,a.name AS owner_name,m.manager_id FROM squads s JOIN accounts a ON a.id=s.owner_id LEFT JOIN members m ON m.tournament_id=s.tournament_id AND m.user_id=s.owner_id WHERE s.tournament_id=? ORDER BY a.name,s.slot_no').all(tid) as Record<string,unknown>[]:[];
   return {
-    drawn,canBuild:drawn&&canBuild(who),myClubs:clubs(who.managerId),
+    drawn,open,openedEarly:!drawn&&open,isOwner:who.role==='admin',canBuild:open&&canBuild(who),myClubs:clubs(who.managerId),
     squads:rows.flatMap(r=>{
       // The EA code is recomputed from the stored fields, never trusted from storage. Rows that no longer validate (for example
       // saved by an earlier version of the builder) are left out rather than shown wrongly.
@@ -54,7 +57,7 @@ export function saveSquad(tid:string,actor:Actor,who:Who,input:unknown){
   try{eaCode=encodeTactic({formationKey:data.formation,buildUp:data.buildUp as BuildUp,lineHeight:data.lineHeight,roleIds:data.slots.map(x=>x.ea)});}
   catch(e){fail(e instanceof TacticCodeError?e.message:'This tactic could not be validated.');}
   return tx(d=>{
-    if(!drawDone(config(d,tid)))fail('The squad builder opens after the draw.',403);
+    if(!isOpen(d,tid,config(d,tid)))fail('The squad builder opens after the draw.',403);
     if(!canBuild(who))fail('Only managers can build squads.',403);
     const at=nowIso();
     let old=d.prepare('SELECT id,version,formation,build_up,line_height,slots FROM squads WHERE tournament_id=? AND owner_id=? AND slot_no=?').get(tid,actor.userId,data.slotNo) as {id:string;version:number;formation:string;build_up:string;line_height:number;slots:string}|undefined;
@@ -81,5 +84,20 @@ export function deleteSquad(tid:string,actor:Actor,who:Who,input:unknown){
     if(s!.owner_id!==actor.userId&&who.role!=='admin')fail('You can only delete your own tactics.',403);
     d.prepare('DELETE FROM squads WHERE id=?').run(data.id);
     return {ok:true};
+  });
+}
+
+// Organizer only: open the builder before the draw (or close it again while the draw has not happened).
+export function setSquadsOpen(tid:string,actor:Actor,who:Who,input:unknown){
+  const {open}=openSchema.parse(input);
+  if(who.role!=='admin')fail('Only the organizer can do that.',403);
+  return tx(d=>{
+    const t=d.prepare('SELECT owner_id FROM tournaments WHERE id=?').get(tid) as {owner_id:string}|undefined;
+    if(!t||t.owner_id!==actor.userId)fail('Only the organizer can do that.',403);
+    if(drawDone(config(d,tid)))fail('The draw has happened, so the squad builder is already open.',409);
+    const at=nowIso();
+    d.prepare('INSERT INTO squad_access(tournament_id,open,updated_by,updated_at) VALUES(?,?,?,?) ON CONFLICT(tournament_id) DO UPDATE SET open=excluded.open,updated_by=excluded.updated_by,updated_at=excluded.updated_at').run(tid,open?1:0,actor.userId,at);
+    d.prepare('INSERT INTO audit(id,tournament_id,actor_id,actor_name,at,action,reason,"before","after") VALUES(?,?,?,?,?,?,?,?,?)').run(randomUUID(),tid,actor.userId,actor.displayName,at,open?'open-squads':'close-squads',open?'Organizer opened the squad builder before the draw.':'Organizer closed the squad builder again.','null',JSON.stringify({open}));
+    return {open};
   });
 }

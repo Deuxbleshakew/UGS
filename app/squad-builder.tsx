@@ -7,7 +7,7 @@ import {api,Empty} from './ui';
 import type {AppState} from './ui';
 
 type Squad={id:string;slotNo:number;name:string;formation:string;buildUp:string;lineHeight:number;slots:Slot[];eaCode:string;version:number;mine:boolean;ownerName:string;clubs:string[]};
-type Data={drawn:boolean;canBuild:boolean;myClubs:string[];squads:Squad[]};
+type Data={drawn:boolean;open:boolean;openedEarly:boolean;isOwner:boolean;canBuild:boolean;myClubs:string[];squads:Squad[]};
 type Draft={id?:string;version?:number;slotNo:number;name:string;formation:string;buildUp:BuildUp;lineHeight:number;slots:Slot[]};
 const blank=(slotNo:number):Draft=>{const d=defaultTactic('352');return {slotNo,name:slotNo===0?'My starting tactic':`Squad tactic ${slotNo}`,formation:d.formationKey,buildUp:d.buildUp,lineHeight:d.lineHeight,slots:d.roleIds.map(ea=>({ea,player:''}))};};
 const fromSquad=(s:Squad):Draft=>({id:s.id,version:s.version,slotNo:s.slotNo,name:s.name,formation:s.formation,buildUp:s.buildUp as BuildUp,lineHeight:s.lineHeight,slots:s.slots});
@@ -26,7 +26,8 @@ export default function SquadBuilder({state}:{state:AppState|null}){
   const ea=useMemo(()=>{try{return {code:encodeTactic(toEa(draft)),error:''};}catch(e){return {code:'',error:(e as Error).message};}},[draft]);
   if(!tid)return <Empty title="Create a tournament first" description="The squad builder belongs to a tournament."/>;
   if(!data)return <section className="panel">{error?<p className="inline-error" role="alert">{error}</p>:<p className="fine-print">Loading…</p>}</section>;
-  if(!data.drawn)return <section className="panel sq-locked"><LockKeyhole size={28}/><h2>Opens after the draw</h2><p className="fine-print">Once managers are drawn to their clubs, you can build your starting tactic and up to four squad tactics here.</p></section>;
+  const setOpen=async(open:boolean)=>{setBusy(true);setError('');try{await api(`tournament/${tid}/squads/open`,{open});await load();}catch(e){setError((e as Error).message);}finally{setBusy(false);}};
+  if(!data.open)return <section className="panel sq-locked"><LockKeyhole size={28}/><h2>Opens after the draw</h2><p className="fine-print">Once managers are drawn to their clubs, you can build your starting tactic and up to four squad tactics here.</p>{error&&<p className="inline-error" role="alert">{error}</p>}{data.isOwner&&<><button className="btn lime" disabled={busy} onClick={()=>void setOpen(true)}>Open squads now</button><p className="fine-print">Organizer only. Managers can start preparing before the draw. You can close it again until the draw happens.</p></>}</section>;
   const edit=(patch:Partial<Draft>)=>setDraft(d=>({...d,...patch}));
   const setSlot=(i:number,patch:Partial<Slot>)=>setDraft(d=>({...d,slots:d.slots.map((s,j)=>j===i?{...s,...patch}:s)}));
   function changeFormation(key:string){
@@ -65,6 +66,7 @@ export default function SquadBuilder({state}:{state:AppState|null}){
   const viewed=data.squads.filter(s=>!s.mine&&s.ownerName===others),owners=[...new Set(data.squads.filter(s=>!s.mine).map(s=>s.ownerName))];
   return <div className="sq-wrap">
     {error&&<p className="inline-error" role="alert">{error}</p>}{note&&<p className="fine-print" role="status">{note}</p>}
+    {data.openedEarly&&<section className="panel"><p className="fine-print">Opened early by the organizer, before the draw.{data.isOwner&&<> <button className="text-btn" disabled={busy} onClick={()=>void setOpen(false)}>Close squads again</button></>}</p></section>}
     {!data.canBuild&&<section className="panel"><p className="fine-print">Only managers can build squads. You can browse other managers' tactics below.</p></section>}
     {data.canBuild&&<div className="sq-grid">
       <section className="panel sq-pitch-panel">

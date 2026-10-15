@@ -50,9 +50,10 @@ export default function AvatarPicker({userId,name}:{userId:string;name:string}){
     <div className="avatar-row">
       {pending?/* eslint-disable-next-line @next/next/no-img-element */<img className="avatar" style={{width:96,height:96}} src={pending.url} alt="Preview of your new picture"/>:<Avatar id={userId} name={name} version={info?.hasAvatar?info.version:null} size={96}/>}
       <div>
-        <p className="fine-print">Optional. It is cropped to a square and shown to other signed-in members, for example on friendly invitations. JPEG, PNG or WebP.</p>
-        <input ref={input} type="file" accept="image/jpeg,image/png,image/webp" onChange={e=>void choose(e.target.files?.[0])} aria-label="Choose a profile picture"/>
-        <div className="sched-actions">
+        <p className="avatar-hint">Optional. It is cropped to a square and shown to other signed-in members, for example on friendly invitations. JPEG, PNG or WebP.</p>
+        <input ref={input} className="avatar-file" type="file" accept="image/jpeg,image/png,image/webp" onChange={e=>void choose(e.target.files?.[0])} aria-label="Choose a profile picture" tabIndex={-1}/>
+        <div className="sched-actions avatar-actions">
+          {!pending&&<button type="button" className="btn primary" disabled={busy} onClick={()=>input.current?.click()}>{info?.hasAvatar?'Change picture':'Choose picture'}</button>}
           {pending&&<><button type="button" className="btn primary" disabled={busy} onClick={()=>void save()}>{busy?'Saving…':'Save picture'}</button><button type="button" className="btn secondary" disabled={busy} onClick={()=>{setPending(null);if(input.current)input.current.value='';}}>Cancel</button></>}
           {!pending&&info?.hasAvatar&&<button type="button" className="btn secondary" disabled={busy} onClick={()=>void remove()}>Remove picture</button>}
         </div>

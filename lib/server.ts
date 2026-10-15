@@ -3,7 +3,7 @@ import { getCurrentUser, sameOrigin, changePassword, type CurrentUser } from "./
 import seed from "@/data/draw-config.json";
 import { configSchema, reportSchema, validateMatchReport, warnings, standings, managerRows, playerRows, awards, csv, type Config, type Fixture } from "./domain";
 import { z } from "zod";
-import { ensurePlayers, listPlayers, communityRankings, listPlayoffs, managerPlayer, addPlayer, createPlayoff, advancePlayoff, CompetitionError } from './competition-server';
+import { ensurePlayers, listPlayers, communityRankings, listPlayoffs, managerPlayer, addPlayer, createPlayoff, advancePlayoff, autoAdvancePlayoffs, cancelPlayoff, getClubStars, setClubStars, CompetitionError } from './competition-server';
 import {accountDirectory, assignUsername, authorizePlayer, authorizeViewer, createPlayerUser, AccountAccessError} from './account-access';
 import { checkPlayoffReport, fixtureSide } from './competition';
 import {tournamentRole} from './access-policy';
@@ -13,8 +13,8 @@ import {getSchedule,scheduleAction,scheduleAdmin} from './scheduling-server';
 import {getFriendlies,friendlyAction} from './friendlies-server';
 import {getAvatar,avatarInfo,saveAvatar,removeAvatar,AVATAR_UPLOAD_LIMIT} from './avatar-server';
 import {disableAccount,enableAccount,removeMember} from './user-management';
-import {listSquads,saveSquad,deleteSquad} from './squads';
-import {createTeamPlayoff,simulateTeamPlayoff,cancelTeamPlayoff,getTeamPlayoff} from './team-playoffs';
+import {listSquads,saveSquad,deleteSquad,setSquadsOpen} from './squads';
+import {createTeamPlayoff,recordTeamTie,simulateTeamPlayoff,cancelTeamPlayoff,getTeamPlayoff} from './team-playoffs';
 import {answerParticipation,decideParticipation,isViewerByChoice} from './participation';
 
 type Member={id:string;tournament_id:string;user_id:string|null;email:string;username:string|null;name:string;role:string;manager_id:string|null;player_id:string|null};
@@ -26,7 +26,7 @@ function db(){return store;}
 const query=(sql:string,...args:unknown[])=>db().prepare(sql).bind(...args);
 async function all<T>(sql:string,...args:unknown[]){return (await query(sql,...args).all<T>()).results;}
 function unpack(row:Record<string,unknown>):Fixture{return {...row,report:row.report?JSON.parse(String(row.report)):null} as Fixture;}
-async function getFixtures(tid:string){return (await all<Record<string,unknown>>("SELECT * FROM fixtures WHERE tournament_id=? ORDER BY matchday,scheduled,id",tid)).map(unpack);}
+async function getFixtures(tid:string){return (await all<Record<string,unknown>>("SELECT * FROM fixtures WHERE tournament_id=? AND status<>'cancelled' ORDER BY matchday,scheduled,id",tid)).map(unpack);}
 async function membership(user:CurrentUser,tid:string){
   const row=await query("SELECT m.*,t.owner_id AS tournament_owner FROM members m JOIN tournaments t ON t.id=m.tournament_id WHERE m.tournament_id=? AND m.user_id=?",tid,user.userId).first<Member&{tournament_owner:string}>();
   if(!row)fail("You do not have access to this tournament.",403);
@@ -94,6 +94,7 @@ async function changeFixture(t:Tournament,m:Member,user:CurrentUser,f:Fixture,da
     query("UPDATE fixtures SET home_player_id=?,away_player_id=? WHERE id=? AND mutation=? AND status='finalized'",homePlayer,awayPlayer,f.id,operation),
   ]);
   if(changed[0].meta.changes!==1)fail("The record or proof changed while you were saving. Refresh and try again.",409);
+  if(status==="finalized"&&f.tie_id)autoAdvancePlayoffs(t.id,user);
   return json({ok:true});
 }
 
@@ -167,7 +168,7 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
       ensurePlayers(t.owner_id);member=await membership(user,tid);
       const config=configSchema.parse(JSON.parse(t.config)),fixtures=await getFixtures(tid);
       const visibleFixtures=fixtures.map(f=>f.status==="finalized"||participant(member,f,config)?f:{...f,report:null,note:null,submitted_by:null});
-      return json({user,profile,onboardingRequired:false,matchweeks:getMatchweeks(tid),tournaments:choices,tournament:{...t,config,awards:t.awards?JSON.parse(t.awards):null},member,fixtures:visibleFixtures,players:listPlayers(t.owner_id),rankings:communityRankings(t.owner_id),playoffs:listPlayoffs(tid),accountAccess:user.isOwner?accountDirectory(user):undefined,
+      return json({user,profile,onboardingRequired:false,matchweeks:getMatchweeks(tid),tournaments:choices,tournament:{...t,config,awards:t.awards?JSON.parse(t.awards):null},member,fixtures:visibleFixtures,players:listPlayers(t.owner_id),rankings:communityRankings(t.owner_id),clubStars:getClubStars(tid),playoffs:listPlayoffs(tid),accountAccess:user.isOwner?accountDirectory(user):undefined,
         members:member.role==="admin"?(await all<Member>("SELECT * FROM members WHERE tournament_id=?",tid)).map(m=>({...m,role:tournamentRole(m.user_id===t.owner_id,m.user_id??'',t.owner_id,m.role)})):[],
         audit:member.role==="admin"?await all("SELECT * FROM audit WHERE tournament_id=? ORDER BY at DESC LIMIT 100",tid):[],
       });
@@ -270,6 +271,7 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
     }
     if(path[2]==='team-playoffs'&&path.length===3&&request.method==='GET')return json(getTeamPlayoff(tid));
     if(path[2]==='squads'&&path.length===3&&request.method==='GET')return json(listSquads(tid,user,{role:m.role,managerId:m.manager_id}));
+    if(path[2]==='squads'&&path.length===4&&path[3]==='open'&&request.method==='POST')return json(setSquadsOpen(tid,user,{role:m.role,managerId:m.manager_id},await body(request)));
     if(path[2]==='squads'&&request.method==='POST'&&(path.length===3||(path.length===4&&path[3]==='delete'))){
       const who={role:m.role,managerId:m.manager_id},input=await body(request);
       return json(path.length===3?saveSquad(tid,user,who,input):deleteSquad(tid,user,who,input));
@@ -277,6 +279,7 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
     if(request.method!=="POST")fail("Endpoint not found.",404);
     admin(m);const data=await body(request);
     if(path[2]==='team-playoffs'&&path.length===3)return json(createTeamPlayoff(tid,user,data));
+    if(path[2]==='team-playoffs'&&path.length===4&&path[3]==='result')return json(recordTeamTie(tid,user,data));
     if(path[2]==='team-playoffs'&&path.length===4&&path[3]==='simulate')return json(simulateTeamPlayoff(tid,user,data));
     if(path[2]==='team-playoffs'&&path.length===4&&path[3]==='cancel')return json(cancelTeamPlayoff(tid,user,data));
     if(path[2]==='matchweeks'&&path.length===3)return json(changeMatchweeks(tid,user,data));
@@ -284,7 +287,9 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
     if(path[2]==='users')return json(createPlayerUser(tid,user,data));
     if(path[2]==='viewers')return json(authorizeViewer(tid,user,data));
     if(path[2]==='players')return json(addPlayer(tid,user,data));
+    if(path[2]==='club-stars'&&!path[3])return json(setClubStars(tid,user,data));
     if(path[2]==='playoffs'&&!path[3])return json(createPlayoff(tid,user,data));
+    if(path[2]==='playoffs'&&path[3]&&path[4]==='cancel')return json(cancelPlayoff(tid,path[3],user,data));
     if(path[2]==='playoffs'&&path[3]&&path[4]==='advance')return json(advancePlayoff(tid,path[3],user,data));
     if(path[2]==='invite'&&data.playerId)return json(authorizePlayer(tid,user,data));
     if(path[2]==="fixtures"){

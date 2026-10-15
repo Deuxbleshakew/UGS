@@ -8,11 +8,14 @@ Locked until the draw: the server refuses writes (and returns no squads) until a
 - EA codes are generated from the builder selections and checked against the configuration extracted from FUTBIN's page (lib/eafc-tactic-config.ts, generated; do not edit by hand). Importing an EA code fills formation, build-up, line height and all eleven roles. Player names and the tactic name are app-only and never part of an EA code.
 
 Files: `drizzle/0017_squads.sql`, `lib/squads.ts`, `lib/squad-data.ts`, `lib/eafc-tactic-code.ts` (raw codec), `lib/eafc-tactic-config.ts` (generated), `lib/eafc-tactics.ts`, `tests/eafc-tactics.test.ts`, `app/squad-builder.tsx`, routes `GET/POST /api/tournament/:tid/squads[/delete]`, view `squad`.
-Production needs migrations 0010 to 0017; back up first.
+Production needs migrations 0010 to 0018; back up first.
 
 ## Status
 - Codec verified against recorded examples: yes (`bJ1HxNuTxs57`, `$J@R7X4d72TG`, `jQ?h5nzptf@j`; tests in `tests/eafc-tactics.test.ts`).
 - Accepted by FUTBIN: the height-60 code only.
 - Accepted by the actual game: NOT verified. `jQ?h5nzptf@j` and any generated code still need a live import test.
-- Production deployed: no. Needs migrations 0010 to 0017.
+- Production deployed: no. Needs migrations 0010 to 0018.
 - Limits: formation labels such as "4-3-3 (2)" are our own display names derived from FUTBIN's keys, not confirmed game names. Rows saved by the first version of the builder (older slot format) are hidden and replaced when that slot is saved again.
+
+## Early opening (migration 0018)
+The organizer can open the builder before the draw with the "Open squads now" button on the locked page (`POST /api/tournament/:tid/squads/open {open:true|false}`, audited, owner only). It can be closed again until the draw happens; after the draw it is always open. Saved tactics are kept while closed.

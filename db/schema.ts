@@ -188,3 +188,7 @@ export const teamPlayoffTies = sqliteTable("team_playoff_ties", {
   l1Low: integer("l1_low"), l1High: integer("l1_high"), l2Low: integer("l2_low"), l2High: integer("l2_high"),
   pensLow: integer("pens_low"), pensHigh: integer("pens_high"), winnerRank: integer("winner_rank"),
 });
+export const clubStars = sqliteTable("club_stars", {
+  tournamentId: text("tournament_id").notNull().references(() => tournaments.id), clubId: text("club_id").notNull(),
+  stars: real("stars").notNull(), updatedBy: text("updated_by").notNull().references(() => accounts.id), updatedAt: text("updated_at").notNull(),
+}, (t) => ({ pk: primaryKey({ columns: [t.tournamentId, t.clubId] }) }));

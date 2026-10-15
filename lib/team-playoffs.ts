@@ -63,6 +63,36 @@ export function simulateTeamPlayoff(tid:string,actor:Actor,input:unknown){
     return {ok:true};
   });
 }
+// The ties are played in EA FC. The organizer enters the two-leg scores; the app checks them and works out the winner.
+const goals=z.number().int().min(0).max(30);
+const resultSchema=runSchema.extend({position:z.number().int().min(1),leg1:z.object({lowGoals:goals,highGoals:goals}),leg2:z.object({lowGoals:goals,highGoals:goals}),pens:z.object({low:z.number().int().min(0).max(30),high:z.number().int().min(0).max(30)}).optional()});
+export function recordTeamTie(tid:string,actor:Actor,input:unknown){
+  const data=resultSchema.parse(input);
+  return tx(d=>{
+    owner(d,tid,actor);
+    const p=d.prepare('SELECT id,status,version FROM team_playoffs WHERE id=? AND tournament_id=?').get(data.id,tid) as {id:string;status:string;version:number}|undefined;
+    if(!p)fail('Team playoff not found.',404);
+    if(p.version!==data.version)fail('This playoff changed. Refresh and try again.',409);
+    if(p.status!=='ready')fail(p.status==='cancelled'?'This playoff was cancelled.':'All ties are already recorded.',409);
+    const t=d.prepare('SELECT id,high_rank,low_rank,winner_rank FROM team_playoff_ties WHERE playoff_id=? AND position=?').get(p.id,data.position) as {id:string;high_rank:number;low_rank:number;winner_rank:number|null}|undefined;
+    if(!t)fail('Tie not found.',404);
+    if(t.winner_rank)fail('This tie already has a result. A recorded result cannot be edited; cancel the playoff and recreate it if a score was wrong.',409);
+    const low=data.leg1.lowGoals+data.leg2.lowGoals,high=data.leg1.highGoals+data.leg2.highGoals;
+    let winner:number;
+    if(low!==high){if(data.pens)fail('Penalties are only for ties that are level on aggregate.');winner=low>high?t.low_rank:t.high_rank;}
+    else{
+      if(!data.pens)fail(`Level on aggregate (${low}–${high}). Enter the penalty shootout score.`);
+      if(data.pens.low===data.pens.high)fail('A shootout cannot end level.');
+      winner=data.pens.low>data.pens.high?t.low_rank:t.high_rank;
+    }
+    d.prepare('UPDATE team_playoff_ties SET l1_low=?,l1_high=?,l2_low=?,l2_high=?,pens_low=?,pens_high=?,winner_rank=? WHERE id=?').run(data.leg1.lowGoals,data.leg1.highGoals,data.leg2.lowGoals,data.leg2.highGoals,data.pens?.low??null,data.pens?.high??null,winner,t.id);
+    const left=(d.prepare('SELECT COUNT(*) AS n FROM team_playoff_ties WHERE playoff_id=? AND winner_rank IS NULL').get(p.id) as {n:number}).n;
+    if(left===0)d.prepare("UPDATE team_playoffs SET status='simulated',simulated_at=?,version=version+1 WHERE id=?").run(nowIso(),p.id);
+    else d.prepare('UPDATE team_playoffs SET version=version+1 WHERE id=?').run(p.id);
+    audit(d,tid,actor,'record-team-tie','Organizer entered the EA FC result for a team playoff tie.',{id:p.id,position:data.position,leg1:data.leg1,leg2:data.leg2,pens:data.pens??null,winnerRank:winner});
+    return {ok:true,complete:left===0};
+  });
+}
 export function cancelTeamPlayoff(tid:string,actor:Actor,input:unknown){
   const data=cancelSchema.parse(input);
   return tx(d=>{

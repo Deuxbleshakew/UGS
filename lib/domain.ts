@@ -72,9 +72,9 @@ export function validateMatchReport(r:Report,f:Fixture){
   if(r.shootout&&!f.tie_id&&(f.stage!=="final"||r.homeScore!==r.awayScore||r.shootout.home===r.shootout.away))throw new Error("A shootout requires a tied final and different shootout scores.");
   if(f.stage==="final"&&r.homeScore===r.awayScore&&!r.shootout)throw new Error("Enter the shootout result for a tied final.");
 }
-export type Standing={id:string;name:string;shortName?:string;manager?:string;pot:string;played:number;wins:number;draws:number;losses:number;gf:number;ga:number;gd:number;points:number;cleanSheets:number;form:string[];stats:Record<string,{total:number;count:number}>};
+export type Standing={id:string;name:string;shortName?:string;manager?:string;pot:string;played:number;wins:number;draws:number;losses:number;gf:number;ga:number;gd:number;points:number;cleanSheets:number;form:string[];last5:{result:'W'|'D'|'L';opponent:string;score:string;home:boolean}[];stats:Record<string,{total:number;count:number}>};
 export function standings(config:Config,fixtures:Fixture[],stage="league"):Standing[]{
-  const rows=new Map<string,Standing>(config.clubs.map(c=>[c.id,{...c,played:0,wins:0,draws:0,losses:0,gf:0,ga:0,gd:0,points:0,cleanSheets:0,form:[],stats:{}}]));
+  const rows=new Map<string,Standing>(config.clubs.map(c=>[c.id,{...c,played:0,wins:0,draws:0,losses:0,gf:0,ga:0,gd:0,points:0,cleanSheets:0,form:[],last5:[],stats:{}}]));
   const official=fixtures.filter(f=>f.kind!=='player'&&f.status==="finalized"&&f.report&&(stage==="all"||f.stage===stage)).sort((a,b)=>a.report!.playedAt.localeCompare(b.report!.playedAt));
   for(const f of official){const r=f.report!;
     for(const [id,score,conceded,stats] of [[f.home,r.homeScore,r.awayScore,r.home],[f.away,r.awayScore,r.homeScore,r.away]] as const){
@@ -83,6 +83,9 @@ export function standings(config:Config,fixtures:Fixture[],stage="league"):Stand
       if(score>conceded){row.wins++;row.points+=3;row.form.push("W");}else if(score===conceded){row.draws++;row.points++;row.form.push("D");}else{row.losses++;row.form.push("L");}
       for(const [key,value] of Object.entries(stats)){const s=row.stats[key]??{total:0,count:0};s.total+=value;s.count++;row.stats[key]=s;}
       row.form=row.form.slice(-5);
+      const opponentId=id===f.home?f.away:f.home,result=score>conceded?'W':score===conceded?'D':'L';
+      row.last5.push({result,opponent:config.clubs.find(c=>c.id===opponentId)?.name??opponentId,score:`${score}-${conceded}`,home:id===f.home});
+      row.last5=row.last5.slice(-5);
     }
   }
   return [...rows.values()].sort((a,b)=>b.points-a.points||b.gd-a.gd||b.gf-a.gf||a.name.localeCompare(b.name));

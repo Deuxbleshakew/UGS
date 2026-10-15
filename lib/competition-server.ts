@@ -19,7 +19,7 @@ function audit(tid:string,user:Actor,action:string,before:unknown,after:unknown)
 function tournament(tid:string){const t=one<Tournament>('SELECT * FROM tournaments WHERE id=?',tid);if(!t)fail('Tournament not found.',404);return t;}
 function unlocked(tid:string){const t=tournament(tid);if(t.locked_at)fail('Unlock tournament awards before changing the competition.');return t;}
 function parseFixture(row:Record<string,unknown>):Fixture{return {...row,report:row.report?JSON.parse(String(row.report)):null} as Fixture;}
-function fixtures(tid:string){return rows<Record<string,unknown>>('SELECT rowid AS rating_order,* FROM fixtures WHERE tournament_id=? ORDER BY rowid',tid).map(parseFixture);}
+function fixtures(tid:string){return rows<Record<string,unknown>>('SELECT rowid AS rating_order,* FROM fixtures WHERE tournament_id=? AND status<>\'cancelled\' ORDER BY rowid',tid).map(parseFixture);}
 
 // Existing manager IDs plus names retain their identity between imported seasons.
 // Account/email links take precedence. Newly added players have their own stable IDs.
@@ -51,12 +51,13 @@ export function ensurePlayers(ownerId:string){atomic(()=>{
 export function listPlayers(ownerId:string):CommunityPlayer[]{return rows<CommunityPlayer>('SELECT id,name,created_at FROM community_players WHERE owner_id=? ORDER BY name,id',ownerId);}
 export function managerPlayer(tid:string,managerId?:string){return managerId?one<{player_id:string}>('SELECT player_id FROM player_links WHERE tournament_id=? AND manager_id=?',tid,managerId)?.player_id??null:null;}
 export function listPlayoffs(tid:string):Playoff[]{
-  return rows<Record<string,unknown>>('SELECT * FROM playoffs WHERE tournament_id=? ORDER BY created_at DESC,id',tid).map(p=>({...p,entrants:JSON.parse(String(p.entrants)),automatic_qualifiers:JSON.parse(String(p.automatic_qualifiers)),qualified:JSON.parse(String(p.qualified)),ties:rows<PlayoffTie>('SELECT * FROM playoff_ties WHERE playoff_id=? ORDER BY round,position',String(p.id))} as Playoff));
+  return rows<Record<string,unknown>>('SELECT * FROM playoffs WHERE tournament_id=? AND status<>\'cancelled\' ORDER BY created_at DESC,id',tid).map(p=>({...p,entrants:JSON.parse(String(p.entrants)),automatic_qualifiers:JSON.parse(String(p.automatic_qualifiers)),qualified:JSON.parse(String(p.qualified)),ties:rows<PlayoffTie>('SELECT * FROM playoff_ties WHERE playoff_id=? ORDER BY round,position',String(p.id))} as Playoff));
 }
 
 export function communityRankings(ownerId:string){
   const all=rows<Record<string,unknown>>('SELECT f.rowid AS rating_order,f.*,p.elo_mode,pt.player_a,pt.player_b FROM fixtures f JOIN tournaments t ON t.id=f.tournament_id LEFT JOIN playoff_ties pt ON pt.id=f.tie_id LEFT JOIN playoffs p ON p.id=pt.playoff_id WHERE t.owner_id=? ORDER BY f.rowid',ownerId);
   const fs=all.map(row=>({...parseFixture(row),rating_order:Number(row.rating_order),elo_mode:row.elo_mode as string|undefined}));
+  const stars=new Map(rows<{tournament_id:string;club_id:string;stars:number}>('SELECT s.* FROM club_stars s JOIN tournaments t ON t.id=s.tournament_id WHERE t.owner_id=?',ownerId).map(r=>[`${r.tournament_id}/${r.club_id}`,r.stars]));
   const events:EloResult[]=[],done=new Set<string>();
   for(const f of fs){
     if(f.status!=='finalized'||!f.report||!f.home_player_id||!f.away_player_id||!f.finalized_at)continue;
@@ -68,10 +69,15 @@ export function communityRankings(ownerId:string){
       const legs=fs.filter(leg=>leg.tie_id===f.tie_id);
       events.push({id:f.tie_id,home:String(raw.player_a),away:String(raw.player_b),score:outcome.winner===raw.player_a?1:0,at:legs.map(l=>l.finalized_at!).sort().at(-1)!,order:Math.max(...legs.map(l=>l.rating_order))});
     }else{
-      const r=f.report;events.push({id:f.id,home:f.home_player_id,away:f.away_player_id,score:r.homeScore>r.awayScore?1:r.homeScore<r.awayScore?0:0.5,at:f.finalized_at,order:f.rating_order});
+      const r=f.report,hs=f.tie_id?undefined:stars.get(`${f.tournament_id}/${f.home}`),as=f.tie_id?undefined:stars.get(`${f.tournament_id}/${f.away}`);
+      events.push({homeStars:hs,awayStars:as,id:f.id,home:f.home_player_id,away:f.away_player_id,score:r.homeScore>r.awayScore?1:r.homeScore<r.awayScore?0:0.5,at:f.finalized_at,order:f.rating_order});
     }
   }
-  return eloRankings(listPlayers(ownerId),events);
+  // Only real people are ranked: managers that were never claimed by an account are placeholders.
+  const placeholders=new Set(rows<{player_id:string}>(`SELECT l.player_id FROM player_links l JOIN tournaments t ON t.id=l.tournament_id WHERE t.owner_id=?
+    AND NOT EXISTS(SELECT 1 FROM members m WHERE m.player_id=l.player_id AND (m.user_id IS NOT NULL OR m.username IS NOT NULL))
+    AND NOT EXISTS(SELECT 1 FROM members m JOIN player_links l2 ON l2.tournament_id=m.tournament_id AND l2.manager_id=m.manager_id WHERE l2.player_id=l.player_id AND (m.user_id IS NOT NULL OR m.username IS NOT NULL))`,ownerId).map(r=>r.player_id));
+  return eloRankings(listPlayers(ownerId).filter(p=>!placeholders.has(p.id)),events);
 }
 
 export function addPlayer(tid:string,user:Actor,input:unknown){
@@ -97,6 +103,7 @@ function insertRound(playoffId:string,tid:string,round:number,entrants:SeededPla
   });
 }
 
+export const QUALIFICATION_MIN_PLAYERS=13;
 export function createPlayoff(tid:string,user:Actor,input:unknown){
   const data=z.object({name:z.string().trim().min(1).max(100),playerIds:z.array(z.string()).min(2).max(128),target:z.number().int().min(1).max(127),directCount:z.number().int().min(0).max(126),eloMode:z.enum(['match','tie']),drawSeed:z.string().min(1).max(100),ratings:z.record(z.number().finite())}).parse(input);
   if(new Set(data.playerIds).size!==data.playerIds.length)fail('Choose each player once.');
@@ -104,6 +111,7 @@ export function createPlayoff(tid:string,user:Actor,input:unknown){
   if(data.directCount>=data.target)fail('Reserve at least one qualifying place for the playoffs.');
   return atomic(()=>{
     const t=unlocked(tid);
+    if(communityRankings(t.owner_id).length<=QUALIFICATION_MIN_PLAYERS)fail(`Qualification switches on when more than ${QUALIFICATION_MIN_PLAYERS} real players have joined.`,409);
     if(one("SELECT id FROM playoffs WHERE tournament_id=? AND status='active'",tid))fail('Complete the current playoff before creating another in this tournament.',409);
     const rankings=communityRankings(t.owner_id),chosen=data.playerIds.map(playerId=>rankings.find(p=>p.id===playerId));
     if(chosen.some(p=>!p))fail('An entrant is not in your player directory.');
@@ -141,3 +149,62 @@ export function advancePlayoff(tid:string,pid:string,user:Actor,input:unknown){
   });
 }
 
+
+// Qualification is automatic: as soon as every tie in the current round is settled, the next round
+// is drawn (or the playoff completes) without anyone pressing a button. Safe to call repeatedly.
+export function autoAdvancePlayoffs(tid:string,user:Actor){
+  for(let guard=0;guard<16;guard++){
+    const active=listPlayoffs(tid).find(p=>p.status==='active');
+    if(!active)return;
+    const fs=fixtures(tid),outcomes=active.ties.filter(t=>t.round===active.round).map(t=>resolveTie(t,fs));
+    if(!outcomes.length||outcomes.some(o=>!o.complete||!o.winner))return;
+    try{advancePlayoff(tid,active.id,user,{version:active.version});}catch{return;}
+  }
+}
+
+// Owner-only: remove an active player playoff before anything has been played. Fixtures are kept as 'cancelled'
+// (hidden everywhere) so history, audit and foreign keys stay intact.
+export function cancelPlayoff(tid:string,pid:string,user:Actor,input:unknown){
+  const data=z.object({version:z.number().int().min(0),reason:z.string().trim().min(3,'Give a reason (at least 3 characters).').max(300)}).parse(input);
+  return atomic(()=>{
+    const t=unlocked(tid);
+    if(t.owner_id!==user.userId)fail('Only the organizer can remove a playoff.',403);
+    const p=one<{status:string;version:number}>('SELECT status,version FROM playoffs WHERE id=? AND tournament_id=?',pid,tid);
+    if(!p)fail('Playoff not found.',404);
+    if(p.version!==data.version)fail('The playoff changed. Refresh and try again.',409);
+    if(p.status!=='active')fail('Only an active playoff can be removed.',409);
+    const legs=rows<{id:string;status:string}>("SELECT f.id,f.status FROM fixtures f JOIN playoff_ties pt ON pt.id=f.tie_id WHERE pt.playoff_id=?",pid);
+    if(legs.some(l=>l.status!=='scheduled'&&l.status!=='cancelled'))fail('A result has already been reported or finalized for this playoff, so it cannot be removed.',409);
+    for(const l of legs){
+      if(one('SELECT 1 FROM proofs WHERE fixture_id=?',l.id))fail('A proof has been uploaded for one of these fixtures, so the playoff cannot be removed.',409);
+    }
+    for(const l of legs){
+      db().prepare("UPDATE schedule_proposals SET status='expired',version=version+1,decided_at=? WHERE fixture_id=? AND status IN ('awaiting_opponent','awaiting_owner')").run(now(),l.id);
+      db().prepare("UPDATE fixtures SET status='cancelled',note=?,version=version+1 WHERE id=?").run(`Removed by the organizer: ${data.reason}`,l.id);
+    }
+    db().prepare("UPDATE playoffs SET status='cancelled',version=version+1 WHERE id=?").run(pid);
+    db().prepare('UPDATE tournaments SET revision=revision+1 WHERE id=?').run(tid);
+    audit(tid,user,'cancel-playoff',{id:pid,status:p.status},{reason:data.reason,fixturesRemoved:legs.length});
+    return {ok:true};
+  });
+}
+
+export function getClubStars(tid:string):Record<string,number>{return Object.fromEntries(rows<{club_id:string;stars:number}>('SELECT club_id,stars FROM club_stars WHERE tournament_id=?',tid).map(r=>[r.club_id,r.stars]));}
+// Owner-only. Elo is always recalculated from finalized results, so a change applies to past results too.
+export function setClubStars(tid:string,user:Actor,input:unknown){
+  const data=z.object({stars:z.record(z.number().min(0.5).max(5).nullable())}).parse(input);
+  return atomic(()=>{
+    const t=tournament(tid);if(t.owner_id!==user.userId)fail('Only the organizer can set club stars.',403);
+    const config=JSON.parse(t.config) as Config,known=new Set(config.clubs.map(c=>c.id));
+    const before=getClubStars(tid);
+    for(const [club,stars] of Object.entries(data.stars)){
+      if(!known.has(club))fail('Unknown club.');
+      if(stars==null){db().prepare('DELETE FROM club_stars WHERE tournament_id=? AND club_id=?').run(tid,club);continue;}
+      if(Math.round(stars*2)!==stars*2)fail('Stars go in half steps (for example 3.5).');
+      db().prepare('INSERT INTO club_stars(tournament_id,club_id,stars,updated_by,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(tournament_id,club_id) DO UPDATE SET stars=excluded.stars,updated_by=excluded.updated_by,updated_at=excluded.updated_at').run(tid,club,stars,user.userId,now());
+    }
+    db().prepare('UPDATE tournaments SET revision=revision+1 WHERE id=?').run(tid);
+    audit(tid,user,'set-club-stars',before,getClubStars(tid));
+    return {ok:true};
+  });
+}

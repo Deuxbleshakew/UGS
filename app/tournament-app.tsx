@@ -18,7 +18,7 @@ import {adminViews, competitionViews, isUgsView, matchroomViews, ugsViews, viewF
 
 const icons: Record<UgsView, LucideIcon> = {
   home: Home, matchroom: Gamepad2, overview: LayoutDashboard, guide: BookOpen,
-  playoffs: GitBranch, teamplayoffs: Dices, squad: Users, fixtures: CalendarDays, standings: BarChart3, clubs: Shield,
+  playoffs: GitBranch, bracket: Trophy, teamplayoffs: Dices, squad: Users, fixtures: CalendarDays, standings: BarChart3, clubs: Shield,
   statistics: Activity, awards: Trophy, elo: Users, friendlies: Gamepad2, history: Clock3,
   tiquicia: Shield, profile: UserRound, admin: ShieldCheck, review: FileCheck2, settings: Settings2,
 };
@@ -142,7 +142,7 @@ export default function TournamentApp() {
     <div className="main-shell">
       <header className="topbar">
         <button ref={menuRef} className="icon-btn mobile-menu" aria-label={mobile ? 'Close navigation' : 'Open navigation'} aria-controls="ugs-sidebar" aria-expanded={mobile} onClick={() => setMobile(!mobile)}><Menu /></button>
-        <div className="breadcrumb"><a href={viewHref('home')} onClick={e => follow(e, 'home')}>UGS</a><ChevronRight size={14} />{(competition || view === 'elo' || view === 'friendlies' || view === 'history') && <><a href={viewHref('matchroom')} onClick={e => follow(e, 'matchroom')}>Matchroom</a><ChevronRight size={14} /></>}{competition && <span className="ugs-competition-crumb">Club Champions <ChevronRight size={14} /></span>}<strong>{definition.label}</strong></div>
+        <div className="breadcrumb"><a href={viewHref('home')} onClick={e => follow(e, 'home')}>UGS</a><ChevronRight size={14} />{(competition || view === 'elo' || view === 'friendlies' || view === 'history') && <><a href={viewHref('matchroom')} onClick={e => follow(e, 'matchroom')}>UCL</a><ChevronRight size={14} /></>}{competition && <span className="ugs-competition-crumb">Club Champions <ChevronRight size={14} /></span>}<strong>{definition.label}</strong></div>
         <div className="topbar-right"><span className="private-label"><LockKeyhole size={13} />Members only</span><span className="avatar small">{state?.user.displayName.slice(0, 1).toUpperCase() ?? 'U'}</span></div>
       </header>
       <main id="ugs-main" ref={mainRef} tabIndex={-1} className="ugs-main">
@@ -150,7 +150,7 @@ export default function TournamentApp() {
         {error && <div className="notice error" role="alert"><AlertCircle size={18} /><span>{error}</span>{error.includes('Sign in') ? <a href="/login">Sign in</a> : <button onClick={() => {setError(''); setLoading(true); refresh(tournament?.id).catch(e => setError(e.message)).finally(() => setLoading(false));}}>Retry</button>}<button className="icon-btn" onClick={() => setError('')} aria-label="Dismiss error"><X size={17} /></button></div>}
         {!loading && state && <>
           {view === 'home' && (state.profile?.participation === 'no' || state.profile?.participation === 'pending') && <p className="notice viewer-note" role="status">You are following as a viewer. More for followers is coming soon. Want to play? Ask to take part in My Profile.</p>}
-          {view !== 'home' && <div className="page-heading"><div><div className="eyebrow">{competition ? 'MATCHROOM / CLUB CHAMPIONS' : inAdmin ? 'UGS / OWNER WORKSPACE' : 'UNION GAMING SOCIETY'}</div><h1>{view === 'overview' ? 'Club Champions' : definition.label}</h1><p>{definition.description}</p></div>{existing && !denied && <div className="heading-actions">{ready && <button className="btn secondary" onClick={() => download(view === 'awards' ? 'awards' : view === 'standings' ? 'clubs' : 'matches')}><ArrowDownToLine size={16} />Export CSV</button>}{(admin || (!ready && owner)) && <button className="btn primary" onClick={() => open('fixture')}><Plus size={17} />{ready ? 'Add fixture' : 'Create tournament'}</button>}</div>}</div>}
+          {view !== 'home' && <div className="page-heading"><div><div className="eyebrow">{competition ? 'UCL / CLUB CHAMPIONS' : inAdmin ? 'UGS / OWNER WORKSPACE' : 'UNION GAMING SOCIETY'}</div><h1>{view === 'overview' ? 'Club Champions' : definition.label}</h1><p>{definition.description}</p></div>{existing && !denied && <div className="heading-actions">{ready && <button className="btn secondary" onClick={() => download(view === 'awards' ? 'awards' : view === 'standings' ? 'clubs' : 'matches')}><ArrowDownToLine size={16} />Export CSV</button>}{(admin || (!ready && owner)) && <button className="btn primary" onClick={() => open('fixture')}><Plus size={17} />{ready ? 'Add fixture' : 'Create tournament'}</button>}</div>}</div>}
           {existing && !denied && <div className="ugs-workspace-strip"><div><span className="eyebrow">SELECTED TOURNAMENT</span><strong>{tournament?.name ?? 'No tournament selected'}</strong></div><button className="btn secondary" onClick={() => open('switch')}><Shield size={16} />Your tournaments <ChevronDown size={15} /></button></div>}
           {(view==='fixtures'||view==='overview')&&<MatchweekPanel key={tournament?.id} state={state} onRefresh={()=>refresh(tournament?.id)}/>}
           {owner&&view==='settings'&&tournament&&<ScheduleSettings key={tournament.id} tid={tournament.id} weeks={(state?.matchweeks?.weeks??[]).map(w=>w.week)} timezone={state?.profile?.data.timezone}/>}
