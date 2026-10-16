@@ -8,8 +8,8 @@ export const metadata: Metadata = {
   title: "Union Gaming Society · UGS",
   description: "Union Gaming: our community, RB Tiquicia and Club Champions in UCL.",
   icons: {
-    icon: {url: "/brand/ugs-initials.png", type: "image/png"},
-    shortcut: "/brand/ugs-initials.png",
+    icon: {url: "/brand/ugs-orchid.png", type: "image/png"},
+    shortcut: "/brand/ugs-orchid.png",
   },
 };
 

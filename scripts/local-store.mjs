@@ -22,6 +22,15 @@ export function database() {
     // Snapshot existing data before the username transition. VACUUM INTO includes
     // committed WAL data; copying the live SQLite file alone would not be safe.
     const ledger = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='app_migrations'").get();
+    if (ledger && db.prepare('SELECT name FROM app_migrations WHERE name=?').get('0021_player_photos.sql')
+      && !db.prepare('SELECT name FROM app_migrations WHERE name=?').get('0022_confirmed_clubs.sql')) {
+      const backups = path.join(dir, 'backups');
+      mkdirSync(backups, {recursive:true, mode:0o700});
+      const snapshot = path.join(backups, `before-confirmed-clubs-${Date.now()}.sqlite`);
+      db.prepare('VACUUM INTO ?').run(snapshot);
+      chmodSync(snapshot, 0o600);
+      console.log('Created pre-confirmed-clubs migration database backup.');
+    }
     if (ledger && db.prepare('SELECT name FROM app_migrations WHERE name=?').get('0019_club_stars.sql')
       && !db.prepare('SELECT name FROM app_migrations WHERE name=?').get('0021_player_photos.sql')) {
       const backups = path.join(dir, 'backups');
@@ -93,6 +102,10 @@ export function database() {
       db.prepare('INSERT INTO app_migrations VALUES(?,?,?)').run(file, checksum, new Date().toISOString());
     }
     db.exec('COMMIT');
+    for (const table of ['club_roster_corrections', 'saved_playoff_corrections']) {
+      const outcomes = db.prepare('SELECT outcome, count(*) AS count FROM ' + table + ' GROUP BY outcome').all();
+      console.log(table + ': ' + JSON.stringify(outcomes));
+    }
   } catch (error) {
     if (db.isTransaction) db.exec('ROLLBACK');
     db.close();

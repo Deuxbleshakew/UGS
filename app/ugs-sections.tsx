@@ -3,6 +3,7 @@ import {ArrowRight, CalendarDays, Gamepad2, Globe2, Shield, Trophy, Users} from 
 import type {AppState} from './ui';
 import {RulesGuide, HistoryView} from './guide-history';
 import TiquiciaRoster from './tiquicia-roster';
+import NextAction from './next-action';
 import {ugsViews, viewHref, type UgsView} from './ugs-navigation';
 
 type Props = {view: UgsView; state: AppState | null; onNavigate: (view: string) => void; onDialog: (type: string) => void};
@@ -30,19 +31,20 @@ export default function UgsSections({view, state, onNavigate, onDialog}: Props) 
   if (view === 'home') return <>
     <section className="ugs-hero">
       <div className="ugs-hero-copy"><div className="eyebrow">UNION GAMING SOCIETY</div>
-        <h1>Costa Rican roots.<br /><span>United by gaming.</span></h1>
-        <p>From Costa Rica to the United States and beyond. A home for our friends, our teams and the games we share.</p>
+        <h1>Different players.<br /><span>One Union.</span></h1>
+        <p>Union Gaming Society is our community: friends with Costa Rican roots and players from everywhere else, playing together. UCL is where we compete. RB Tiquicia is where we play as one team.</p>
         <div className="ugs-actions"><a className="btn ugs-white-button" href={viewHref('matchroom')}>Enter UCL <ArrowRight size={17} /></a><a className="ugs-hero-link" href={viewHref('tiquicia')}>Meet RB Tiquicia <ArrowRight size={16} /></a></div>
       </div>
-      <div className="ugs-hero-art" aria-hidden="true"><div className="ugs-flag-lines" /><Image src="/brand/ugs-initials.png" alt="" width={1774} height={887} unoptimized priority /><span>UNION GAMING</span></div>
+      <div className="ugs-hero-art" aria-hidden="true"><div className="ugs-flag-lines" /><Image src="/brand/ugs-orchid.png" alt="" width={1254} height={1254} unoptimized priority /><span>UNION GAMING</span></div>
     </section>
     <div className="spot-banner spot-duo" aria-hidden="true">{/* eslint-disable-next-line @next/next/no-img-element */}<img src="/brand/spotlight-duo.jpg" alt="" className="" loading="lazy"/><span>Two players. One league.</span></div>
+    <NextAction state={state} />
     <div className="ugs-section-heading"><div><span className="eyebrow">YOUR COMMUNITY</span><h2>Find your next game.</h2></div><Globe2 size={22} aria-hidden="true" /></div>
     <div className="ugs-feature-grid">
-      <article className="panel ugs-feature-card"><span className="ugs-feature-icon"><Trophy size={25} /></span><span className="eyebrow">COMPETE</span><h2>UCL</h2><p>Follow Club Champions, find fixtures and see how our players rank. Your competition workspace is here.</p><a className="text-btn" href={viewHref('matchroom')}>Open UCL <ArrowRight size={17} /></a></article>
-      <article className="panel ugs-feature-card ugs-team-card"><Image src="/brand/rb-tiquicia.png" alt="RB Tiquicia crest" width={640} height={641} unoptimized className="ugs-team-card-crest" /><span className="eyebrow">PLAY TOGETHER</span><h2>RB Tiquicia</h2><p>Our community’s Pro Clubs team. Shared roots. One team.</p><a className="text-btn" href={viewHref('tiquicia')}>Visit the team <ArrowRight size={17} /></a></article>
+      <article className="panel ugs-feature-card"><span className="ugs-feature-icon"><Trophy size={25} /></span><span className="eyebrow">COMPETE</span><h2>UCL</h2><p>One community. No easy matches. Follow Club Champions, find your fixtures and see how our players rank.</p><a className="text-btn" href={viewHref('matchroom')}>Open UCL <ArrowRight size={17} /></a></article>
+      <article className="panel ugs-feature-card ugs-team-card"><Image src="/brand/rb-tiquicia.png" alt="RB Tiquicia crest" width={640} height={641} unoptimized className="ugs-team-card-crest" /><span className="eyebrow">PLAY TOGETHER</span><h2>RB Tiquicia</h2><p>Raíces ticas. Un solo equipo. Our community’s Pro Clubs team.</p><a className="text-btn" href={viewHref('tiquicia')}>Visit the team <ArrowRight size={17} /></a></article>
     </div>
-    <div className="ugs-community-note"><Gamepad2 size={22} aria-hidden="true" /><p><b>Union Gaming.</b> Our organization brings the community together. UCL is where we follow our competitions.</p></div>
+    <div className="ugs-community-note"><Gamepad2 size={22} aria-hidden="true" /><p><b>The match ends. The community stays.</b> UGS brings us together, UCL is where we compete, and room is left for more games.</p></div>
   </>;
 
   if (view === 'matchroom') return <>

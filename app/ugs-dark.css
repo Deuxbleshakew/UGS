@@ -314,3 +314,34 @@ ol.gh-list{list-style:decimal}
 @media(max-width:640px){.spot-strip{grid-template-columns:repeat(2,1fr)}.spot-banner{height:140px}}
 
 .crest.club-badge { background: transparent; border: 0; box-shadow: none; padding: 2px; }
+
+/* Square orchid crest supplied by the owner. Preserve its original artwork. */
+.ugs-brand-lockup { gap: 10px; }
+.ugs-wordmark { width: 88px; height: 88px; object-fit: contain; border-radius: 10px; }
+.ugs-auth-intro .ugs-wordmark { width: 144px; height: 144px; }
+.ugs-hero-art img { width: min(100%, 260px); height: auto; aspect-ratio: 1; object-fit: contain; transform: none; border-radius: 16px; }
+@media (max-width: 600px) { .ugs-auth-intro .ugs-wordmark { width: 112px; height: 112px; } }
+
+/* Last 5 form dots: fixed small circles, never stretched by table or flex layout */
+.table-scroll td .last5{display:inline-flex;flex-wrap:nowrap;align-items:center;gap:4px;height:auto}
+.table-scroll td .last5 i,.last5 i{flex:0 0 auto!important;width:18px!important;height:18px!important;min-width:0!important;min-height:0!important;max-width:18px!important;max-height:18px!important;aspect-ratio:1/1;border-radius:50%!important;padding:0!important;font-size:.55rem!important;line-height:1}
+.table-scroll td .last5 i.latest,.last5 i.latest{width:20px!important;height:20px!important;max-width:20px!important;max-height:20px!important}
+
+/* Community brand batch: next step card, focus, mobile */
+.next-action{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:16px 20px;margin:0 0 16px;border-radius:14px;background:var(--paper,#f4efe3);border:1px solid var(--line,#d9d2c3);border-left:5px solid #3f6b2f}
+.next-action h3{margin:2px 0 4px;font-size:1.05rem}.next-action p{margin:0;max-width:62ch;line-height:1.45;opacity:.85}
+.table-legend i.out{background:#c9c2b2}
+:where(a,button,select,input,textarea,summary,[tabindex]):focus-visible{outline:3px solid #2f5fd0;outline-offset:2px;border-radius:6px}
+@media(max-width:700px){
+  .table-scroll.league-full th:nth-child(n+5):nth-child(-n+8),.table-scroll.league-full td:nth-child(n+5):nth-child(-n+8){display:none}
+  .kb-cols{grid-template-columns:1fr;min-width:0}.kb-scroll{overflow-x:visible}.kb-col{justify-content:flex-start}
+  .next-action{flex-direction:column;align-items:flex-start}.next-action .btn{width:100%;justify-content:center}
+}
+
+.status-help{display:grid;gap:4px}
+.status-history{display:grid;gap:2px;margin:4px 0 0;font-size:.82rem;opacity:.8}
+.reason-box{display:grid;gap:6px}
+.reason-rules{margin:0;padding-left:18px;font-size:.82rem;opacity:.8}
+.review-summary .waiting{opacity:.85}
+.review-group{margin:18px 0 6px;font-size:.95rem}
+.review-group-note{margin:0 0 8px;font-size:.85rem}

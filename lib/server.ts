@@ -12,6 +12,7 @@ import {getProfile,saveProfile} from './profile-server';
 import {getMatchweeks,changeMatchweeks,requireOpenMatchweek} from './matchweeks-server';
 import {getSchedule,scheduleAction,scheduleAdmin} from './scheduling-server';
 import {getFriendlies,friendlyAction} from './friendlies-server';
+import {maskUndrawnManagers} from './draw-privacy';
 import {photoVersions,getPlayerPhoto,setPlayerPhoto} from './player-photos';
 import {getAvatar,avatarInfo,saveAvatar,removeAvatar,AVATAR_UPLOAD_LIMIT} from './avatar-server';
 import {disableAccount,enableAccount,removeMember} from './user-management';
@@ -70,7 +71,8 @@ async function changeFixture(t:Tournament,m:Member,user:CurrentUser,f:Fixture,da
     status="pending";note=action==="edit"?reason:null;submittedBy=user.userId;submittedAt=now();
     const h=f.kind==='player'?f.home:c.clubs.find(cl=>cl.id===f.home)?.manager,a=f.kind==='player'?f.away:c.clubs.find(cl=>cl.id===f.away)?.manager;
     const identity=f.kind==='player'?m.player_id:m.manager_id;
-    submittedManager=identity&&[h,a].includes(identity)?identity:h??null;
+    // Only a side that really entered the report is barred from answering it. An admin who is not a side leaves this empty, so either manager may confirm or dispute.
+    submittedManager=identity&&[h,a].includes(identity)?identity:null;
   }else if(action==="confirm"||action==="dispute"){
     if(f.status!=="pending")fail("This match is not awaiting opponent confirmation.",409);
     const h=f.kind==='player'?f.home:c.clubs.find(cl=>cl.id===f.home)?.manager,a=f.kind==='player'?f.away:c.clubs.find(cl=>cl.id===f.away)?.manager;
@@ -182,7 +184,7 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
       ensurePlayers(t.owner_id);member=await membership(user,tid);
       const config=configSchema.parse(JSON.parse(t.config)),fixtures=await getFixtures(tid);
       const visibleFixtures=fixtures.map(f=>f.status==="finalized"||participant(member,f,config)?f:{...f,report:null,note:null,submitted_by:null});
-      return json({user,profile,onboardingRequired:false,matchweeks:getMatchweeks(tid),tournaments:choices,tournament:{...t,config,awards:t.awards?JSON.parse(t.awards):null},member,fixtures:visibleFixtures,players:listPlayers(t.owner_id),rankings:communityRankings(t.owner_id),clubStars:getClubStars(tid),playerPhotos:photoVersions(t.owner_id),season:(()=>{const x=getScheduleSettings(tid);return {start:x.season_start,end:x.season_end};})(),playoffs:listPlayoffs(tid),accountAccess:user.isOwner?accountDirectory(user):undefined,
+      return json({user,profile,onboardingRequired:false,matchweeks:getMatchweeks(tid),tournaments:choices,tournament:{...t,config:maskUndrawnManagers(config,member.role==="admin"),awards:t.awards?JSON.parse(t.awards):null},member,fixtures:visibleFixtures,players:listPlayers(t.owner_id),rankings:communityRankings(t.owner_id),clubStars:getClubStars(tid),playerPhotos:photoVersions(t.owner_id),season:(()=>{const x=getScheduleSettings(tid);return {start:x.season_start,end:x.season_end};})(),playoffs:listPlayoffs(tid),accountAccess:user.isOwner?accountDirectory(user):undefined,
         members:member.role==="admin"?(await all<Member>("SELECT * FROM members WHERE tournament_id=?",tid)).map(m=>({...m,role:tournamentRole(m.user_id===t.owner_id,m.user_id??'',t.owner_id,m.role)})):[],
         audit:member.role==="admin"?await all("SELECT * FROM audit WHERE tournament_id=? ORDER BY at DESC LIMIT 100",tid):[],
       });
@@ -364,6 +366,7 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
         await saveConfig(parsed,"import-config",parsed);return json({ok:true});
       }
       if(input?.exportFormatVersion!==1||input.complete!==true||input.tournamentId!==c.tournamentId)fail("Use a complete Unity draw export for this tournament (format version 1).");
+      if(c.clubs.some(cl=>cl.pot==="pending"))fail("Complete qualification and the pot vote before importing a draw.");
       if(input.mode==="ManagerClubs"){
         const assignments=z.array(z.object({clubId:z.string(),managerId:z.string()})).parse(input.results?.assignments);
         if(assignments.length!==c.clubs.length||new Set(assignments.map(a=>a.clubId)).size!==c.clubs.length)fail("The assignment file must contain every club exactly once.");
