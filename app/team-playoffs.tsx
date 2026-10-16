@@ -65,9 +65,9 @@ export default function TeamPlayoffs({state}:{state:AppState|null}){
           return <article className="tp-tie" key={t.position}>
             <header><span>Tie {t.position}</span>{t.winner?<b className="tp-win">{t.winner} through</b>:<b className="tp-wait">Awaiting result</b>}</header>
             <div className="tp-head"><span/><span/><span className="tp-n">Leg 1</span><span className="tp-n">Leg 2</span><span className="tp-n">Agg</span></div>
-            {owner&&p.status==='ready'&&!t.winner?<ResultForm tie={t} busy={busy} onSave={body=>act('/result',{id:p.id,version:p.version,position:t.position,...body})}/>:<>
             {row(t.high,highWon,t.leg1?.awayGoals,t.leg2?.homeGoals,t.aggregate?.high,t.penalties?.high)}
-            {row(t.low,lowWon,t.leg1?.homeGoals,t.leg2?.awayGoals,t.aggregate?.low,t.penalties?.low)}</>}
+            {row(t.low,lowWon,t.leg1?.homeGoals,t.leg2?.awayGoals,t.aggregate?.low,t.penalties?.low)}
+            {owner&&p.status==='ready'&&!t.winner&&<ResultForm tie={t} busy={busy} onSave={body=>act('/result',{id:p.id,version:p.version,position:t.position,...body})}/>}
             <footer>Leg 1 at {t.low.team} · Leg 2 at {t.high.team}{t.penalties?' · decided on penalties':''}</footer>
           </article>;})}</div>
       </section>
@@ -90,12 +90,11 @@ function ResultForm({tie,busy,onSave}:{tie:Tie;busy:boolean;onSave:(body:object)
   const n=(x:string)=>x===''?NaN:Number(x),set=(k:keyof typeof v)=>(e:{target:{value:string}})=>setV({...v,[k]:e.target.value.replace(/\D/g,'').slice(0,2)});
   const all=[v.l1l,v.l1h,v.l2l,v.l2h].every(x=>x!==''),low=n(v.l1l)+n(v.l2l),high=n(v.l1h)+n(v.l2h),level=all&&low===high;
   const ok=all&&(!level||(v.pl!==''&&v.ph!==''&&v.pl!==v.ph));
-  const box=(k:keyof typeof v,label:string)=><input className="tp-in" inputMode="numeric" placeholder="–" value={v[k]} onChange={set(k)} aria-label={label}/>;
-  const agg=(x:number)=>all?String(x):'–';
-  return <div className="tp-entry">
-    <div className="tp-row"><span className="tp-seed">#{tie.high.rank}</span><b className="tp-team">{tie.high.team}</b>{box('l1h',`${tie.high.team} leg 1 goals`)}{box('l2h',`${tie.high.team} leg 2 goals (home)`)}<span className="tp-n tp-agg">{agg(high)}</span></div>
-    <div className="tp-row"><span className="tp-seed">#{tie.low.rank}</span><b className="tp-team">{tie.low.team}</b>{box('l1l',`${tie.low.team} leg 1 goals (home)`)}{box('l2l',`${tie.low.team} leg 2 goals`)}<span className="tp-n tp-agg">{agg(low)}</span></div>
-    {level&&<div className="tp-row tp-pen-row"><span/><b className="tp-team">Penalties · {tie.high.team} / {tie.low.team}</b>{box('ph',`${tie.high.team} penalties`)}{box('pl',`${tie.low.team} penalties`)}<span/></div>}
-    <button className="btn lime tp-save" disabled={busy||!ok} onClick={()=>onSave({leg1:{lowGoals:n(v.l1l),highGoals:n(v.l1h)},leg2:{lowGoals:n(v.l2l),highGoals:n(v.l2h)},...(level?{pens:{low:n(v.pl),high:n(v.ph)}}:{})})}>Save result</button>
+  const box=(k:keyof typeof v,label:string)=><label className="tp-score"><span>{label}</span><input inputMode="numeric" value={v[k]} onChange={set(k)} aria-label={label}/></label>;
+  return <div className="tp-result-form">
+    <div>{box('l1l',`${tie.low.team} (leg 1, home)`)}{box('l1h',`${tie.high.team} (leg 1)`)}</div>
+    <div>{box('l2h',`${tie.high.team} (leg 2, home)`)}{box('l2l',`${tie.low.team} (leg 2)`)}</div>
+    {level&&<div className="tp-pens"><b>Level {low}–{high}. Penalties:</b>{box('pl',`${tie.low.team} pens`)}{box('ph',`${tie.high.team} pens`)}</div>}
+    <button className="btn lime" disabled={busy||!ok} onClick={()=>onSave({leg1:{lowGoals:n(v.l1l),highGoals:n(v.l1h)},leg2:{lowGoals:n(v.l2l),highGoals:n(v.l2h)},...(level?{pens:{low:n(v.pl),high:n(v.ph)}}:{})})}>Save result</button>
   </div>;
 }

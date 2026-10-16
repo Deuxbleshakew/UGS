@@ -33,7 +33,7 @@ export function RulesGuide({state}:{state:AppState|null}){
       </ul></section>
     <section className="panel"><div className="section-heading"><div><span className="eyebrow">TEAMS & SQUADS</span><h2>Team vote and squad builder</h2></div></div>
       <ul className="gh-list">
-        <li>Teams in the community vote qualify directly or through simulated home-and-away ties, run once by the owner.</li>
+        <li>The community team vote decides who qualifies: the top teams go straight through and the rest play home-and-away ties in EA FC, with the organizer entering the scores.</li>
         <li>The squad builder opens after the draw (or earlier if an organizer opens it). Build up to five tactics, then copy the EA FC tactic code or share your squad code.</li>
         <li>Tactic codes are generated from the same rules as the in-game tactics screen. Paste them in-game to confirm they load as expected.</li>
       </ul></section>

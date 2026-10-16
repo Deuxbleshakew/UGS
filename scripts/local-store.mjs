@@ -22,6 +22,15 @@ export function database() {
     // Snapshot existing data before the username transition. VACUUM INTO includes
     // committed WAL data; copying the live SQLite file alone would not be safe.
     const ledger = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='app_migrations'").get();
+    if (ledger && db.prepare('SELECT name FROM app_migrations WHERE name=?').get('0019_club_stars.sql')
+      && !db.prepare('SELECT name FROM app_migrations WHERE name=?').get('0021_player_photos.sql')) {
+      const backups = path.join(dir, 'backups');
+      mkdirSync(backups, {recursive:true, mode:0o700});
+      const snapshot = path.join(backups, `before-tiquicia-player-photos-${Date.now()}.sqlite`);
+      db.prepare('VACUUM INTO ?').run(snapshot);
+      chmodSync(snapshot, 0o600);
+      console.log('Created pre-tiquicia/player-photos migration database backup.');
+    }
     if (ledger && db.prepare('SELECT name FROM app_migrations WHERE name=?').get('0017_squads.sql')
       && !db.prepare('SELECT name FROM app_migrations WHERE name=?').get('0019_club_stars.sql')) {
       const backups = path.join(dir, 'backups');

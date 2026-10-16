@@ -20,9 +20,9 @@ const icons: Record<UgsView, LucideIcon> = {
   home: Home, matchroom: Gamepad2, overview: LayoutDashboard, guide: BookOpen,
   playoffs: GitBranch, bracket: Trophy, teamplayoffs: Dices, squad: Users, fixtures: CalendarDays, standings: BarChart3, clubs: Shield,
   statistics: Activity, awards: Trophy, elo: Users, friendlies: Gamepad2, history: Clock3,
-  tiquicia: Shield, profile: UserRound, admin: ShieldCheck, review: FileCheck2, settings: Settings2,
+  tiquicia: Shield, profile: UserRound, admin: ShieldCheck, review: FileCheck2, roster: Users, settings: Settings2,
 };
-const existingViews: readonly UgsView[] = ['overview', 'playoffs', 'teamplayoffs', 'squad', 'fixtures', 'standings', 'clubs', 'statistics', 'awards', 'elo', 'review', 'settings'];
+const existingViews: readonly UgsView[] = ['overview', 'playoffs', 'teamplayoffs', 'squad', 'fixtures', 'standings', 'clubs', 'statistics', 'awards', 'elo', 'review', 'roster', 'settings'];
 
 export default function TournamentApp() {
   const [state, setState] = useState<AppState | null>(null);
@@ -103,7 +103,7 @@ export default function TournamentApp() {
     setModal(null); setToast('Saved to your tournament workspace.');
   }
   function download(kind: string) {
-    if (tournament) window.location.href = `/api/tournament/${tournament.id}/export?kind=${encodeURIComponent(view === 'elo' && kind === 'matches' ? 'elo' : kind)}`;
+    if (admin && tournament) window.location.href = `/api/tournament/${tournament.id}/export?kind=${encodeURIComponent(view === 'elo' && kind === 'matches' ? 'elo' : kind)}`;
   }
   function navLink(id: UgsView, sectionActive = false) {
     const item = ugsViews[id], Icon = icons[id];
@@ -132,7 +132,7 @@ export default function TournamentApp() {
         {navLink('tiquicia')}
         {navLink('profile')}
         {owner && navLink('admin', inAdmin)}
-        {owner && inAdmin && <div className="ugs-subnav">{navLink('review')}{navLink('settings')}</div>}
+        {owner && inAdmin && <div className="ugs-subnav">{navLink('review')}{navLink('roster')}{navLink('settings')}</div>}
       </nav>
       <div className="sidebar-bottom">
         <div className="account"><span className="avatar">{state?.user.displayName.slice(0, 1).toUpperCase() ?? 'U'}</span><div><b>{state?.user.displayName ?? 'Union Gaming'}</b><small>{owner ? 'Owner · Admin' : 'Member account'}</small></div><button className="icon-btn" aria-label="Sign out" onClick={async () => {try {await api('auth/logout', {}); window.location.assign('/login');} catch (e) {setError((e as Error).message);}}}><LogOut size={17} /></button></div>
@@ -150,8 +150,8 @@ export default function TournamentApp() {
         {error && <div className="notice error" role="alert"><AlertCircle size={18} /><span>{error}</span>{error.includes('Sign in') ? <a href="/login">Sign in</a> : <button onClick={() => {setError(''); setLoading(true); refresh(tournament?.id).catch(e => setError(e.message)).finally(() => setLoading(false));}}>Retry</button>}<button className="icon-btn" onClick={() => setError('')} aria-label="Dismiss error"><X size={17} /></button></div>}
         {!loading && state && <>
           {view === 'home' && (state.profile?.participation === 'no' || state.profile?.participation === 'pending') && <p className="notice viewer-note" role="status">You are following as a viewer. More for followers is coming soon. Want to play? Ask to take part in My Profile.</p>}
-          {view !== 'home' && <div className="page-heading"><div><div className="eyebrow">{competition ? 'UCL / CLUB CHAMPIONS' : inAdmin ? 'UGS / OWNER WORKSPACE' : 'UNION GAMING SOCIETY'}</div><h1>{view === 'overview' ? 'Club Champions' : definition.label}</h1><p>{definition.description}</p></div>{existing && !denied && <div className="heading-actions">{ready && <button className="btn secondary" onClick={() => download(view === 'awards' ? 'awards' : view === 'standings' ? 'clubs' : 'matches')}><ArrowDownToLine size={16} />Export CSV</button>}{(admin || (!ready && owner)) && <button className="btn primary" onClick={() => open('fixture')}><Plus size={17} />{ready ? 'Add fixture' : 'Create tournament'}</button>}</div>}</div>}
-          {existing && !denied && <div className="ugs-workspace-strip"><div><span className="eyebrow">SELECTED TOURNAMENT</span><strong>{tournament?.name ?? 'No tournament selected'}</strong></div><button className="btn secondary" onClick={() => open('switch')}><Shield size={16} />Your tournaments <ChevronDown size={15} /></button></div>}
+          {view !== 'home' && <div className="page-heading"><div><div className="eyebrow">{competition ? 'UCL / CLUB CHAMPIONS' : inAdmin ? 'UGS / OWNER WORKSPACE' : 'UNION GAMING SOCIETY'}</div><h1>{view === 'overview' ? 'Club Champions' : definition.label}</h1><p>{definition.description}</p></div>{existing && !denied && <div className="heading-actions">{ready && admin && <button className="btn secondary" onClick={() => download(view === 'awards' ? 'awards' : view === 'standings' ? 'clubs' : 'matches')}><ArrowDownToLine size={16} />Export CSV</button>}{(admin || (!ready && owner)) && <button className="btn primary" onClick={() => open('fixture')}><Plus size={17} />{ready ? 'Add fixture' : 'Create tournament'}</button>}</div>}</div>}
+          {existing && !denied && (admin || owner) && <div className="ugs-workspace-strip"><div><span className="eyebrow">SELECTED TOURNAMENT</span><strong>{tournament?.name ?? 'No tournament selected'}</strong></div><button className="btn secondary" onClick={() => open('switch')}><Shield size={16} />Your tournaments <ChevronDown size={15} /></button></div>}
           {(view==='fixtures'||view==='overview')&&<MatchweekPanel key={tournament?.id} state={state} onRefresh={()=>refresh(tournament?.id)}/>}
           {owner&&view==='settings'&&tournament&&<ScheduleSettings key={tournament.id} tid={tournament.id} weeks={(state?.matchweeks?.weeks??[]).map(w=>w.week)} timezone={state?.profile?.data.timezone}/>}
           {view==='profile'&&state.profile ? <MyProfile key={state.profile.version} profile={state.profile} username={state.user.username} userId={state.user.userId} onRefresh={()=>refresh(tournament?.id)}/> : view==='friendlies'&&state.profile ? <Friendlies timezone={state.profile.data.timezone}/> : denied ? <Empty title="Owner access required" description="Only the owner can open tournament administration. Choose an authorized tournament to manage it." />

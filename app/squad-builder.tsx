@@ -72,10 +72,12 @@ export default function SquadBuilder({state}:{state:AppState|null}){
       <section className="panel sq-pitch-panel">
         <div className="sq-top"><label>Formation<select value={draft.formation} onChange={e=>changeFormation(e.target.value)}>{FORMATIONS.map(x=><option key={x.key} value={x.key}>{formationLabel(x.key)}</option>)}</select></label>
           <label>Build-up<select value={draft.buildUp} onChange={e=>edit({buildUp:e.target.value as BuildUp})}>{BUILD_UP_NAMES.map(b=><option key={b}>{b}</option>)}</select></label>
-          <label>Line height ({draft.lineHeight})<input type="range" min={1} max={100} value={draft.lineHeight} onChange={e=>edit({lineHeight:Number(e.target.value)})}/></label></div>
-        <div className="sq-pitch" aria-label="Pitch">{f.positions.map((p,i)=>{const o=optionsFor(p.pos).find(x=>x.id===draft.slots[i].ea);return <button type="button" key={i} className={`sq-card${i===pick?' on':''}`} style={{left:`${layout[i].x}%`,top:`${layout[i].y}%`}} onClick={()=>setPick(i)}>
-          <small>{draft.slots[i].player||'—'}</small><b>{o?roleName(o):'?'}</b><span>{o?.focus}</span><em>{p.pos}</em></button>;})}</div>
-        <div className="sq-edit"><b>{sel.pos}</b>
+          <label className="sq-height">Line height <b>{draft.lineHeight}</b><input type="range" min={1} max={100} value={draft.lineHeight} onChange={e=>edit({lineHeight:Number(e.target.value)})}/><span className="sq-range"><i>Deep</i><i>High</i></span></label></div>
+        <div className="sq-pitch" aria-label="Pitch">
+          <svg className="sq-lines" viewBox="0 0 100 118" aria-hidden="true"><g fill="none" stroke="rgba(255,255,255,.55)" strokeWidth=".45"><rect x="2" y="2" width="96" height="114" rx="1"/><path d="M2 2h96"/><path d="M38 2a12 12 0 0 0 24 0"/><rect x="21" y="92" width="58" height="24"/><rect x="37" y="107" width="26" height="9"/><path d="M40 92a11 11 0 0 0 20 0"/><circle cx="50" cy="103" r=".7" fill="rgba(255,255,255,.6)"/></g></svg>
+          {f.positions.map((p,i)=>{const o=optionsFor(p.pos).find(x=>x.id===draft.slots[i].ea),grp=p.pos==='GK'?'gk':/B$|^CB$/.test(p.pos)?'def':/^(ST|LW|RW)$/.test(p.pos)?'att':'mid';return <button type="button" key={i} className={`sq-card g-${grp}${i===pick?' on':''}`} style={{left:`${layout[i].x}%`,top:`${layout[i].y}%`}} onClick={()=>setPick(i)} aria-label={`${p.pos}: ${o?roleName(o):'?'}`}>
+          <em>{p.pos}</em><b>{o?roleName(o):'?'}</b><span>{o?.focus}</span>{draft.slots[i].player&&<small>{draft.slots[i].player}</small>}</button>;})}</div>
+        <div className="sq-edit"><span className="sq-editpos"><i>Editing</i><b>{sel.pos}</b></span>
           <label>Role and focus<select value={selSlot.ea} onChange={e=>setSlot(pick,{ea:Number(e.target.value)})}>{optionsFor(sel.pos).map(o=><option key={o.id} value={o.id}>{optionLabel(o)}</option>)}</select></label>
           <label>Player (app only, optional)<input value={selSlot.player} maxLength={40} onChange={e=>setSlot(pick,{player:e.target.value})}/></label></div>
         <p className="fine-print">New tactics start from a plain starting point for each position. It is not an optimized setup, so choose the roles you want.</p>

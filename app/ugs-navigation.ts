@@ -1,6 +1,6 @@
 export type UgsView = 'home' | 'matchroom' | 'overview' | 'guide' | 'playoffs' | 'bracket' | 'teamplayoffs' | 'squad' |
   'fixtures' | 'standings' | 'clubs' | 'statistics' | 'awards' | 'elo' |
-  'friendlies' | 'history' | 'tiquicia' | 'profile' | 'admin' | 'review' | 'settings';
+  'friendlies' | 'history' | 'tiquicia' | 'profile' | 'admin' | 'review' | 'roster' | 'settings';
 
 type ViewDefinition = {
   label: string;
@@ -31,12 +31,13 @@ export const ugsViews: Record<UgsView, ViewDefinition> = {
   profile: {label: 'My Profile', path: 'profile', description: 'Your followed teams and gaming details.', section: 'ugs'},
   admin: {label: 'Admin', path: 'admin', description: 'Owner tools for your tournaments and player access.', section: 'admin'},
   review: {label: 'Review queue', path: 'admin/review', description: 'Review evidence and make match reports official.', section: 'admin'},
+  roster: {label: 'Players', path: 'admin/players', description: 'Add players and their photos.', section: 'admin'},
   settings: {label: 'Tournament setup', path: 'admin/setup', description: 'Manage player access, imports and tournament exports.', section: 'admin'},
 };
 
 export const competitionViews: readonly UgsView[] = ['overview', 'guide', 'playoffs', 'bracket', 'teamplayoffs', 'squad', 'fixtures', 'standings', 'clubs', 'statistics', 'awards'];
 export const matchroomViews: readonly UgsView[] = ['matchroom', ...competitionViews, 'elo', 'friendlies', 'history'];
-export const adminViews: readonly UgsView[] = ['admin', 'review', 'settings'];
+export const adminViews: readonly UgsView[] = ['admin', 'review', 'roster', 'settings'];
 
 export function isUgsView(value: string): value is UgsView {
   return Object.hasOwn(ugsViews, value);

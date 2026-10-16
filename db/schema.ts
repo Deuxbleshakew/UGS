@@ -192,3 +192,14 @@ export const clubStars = sqliteTable("club_stars", {
   tournamentId: text("tournament_id").notNull().references(() => tournaments.id), clubId: text("club_id").notNull(),
   stars: real("stars").notNull(), updatedBy: text("updated_by").notNull().references(() => accounts.id), updatedAt: text("updated_at").notNull(),
 }, (t) => ({ pk: primaryKey({ columns: [t.tournamentId, t.clubId] }) }));
+export const tiquiciaPlayers = sqliteTable("tiquicia_players", {
+  id: text("id").primaryKey(), name: text("name").notNull(), position: text("position").notNull(), gamertag: text("gamertag").notNull().default(""),
+  shirtNumber: integer("shirt_number"), createdBy: text("created_by").notNull().references(() => accounts.id), createdAt: text("created_at").notNull(),
+});
+
+// Milestone: community player photos (migration 0021). Documentation mirror; the runtime uses the SQL migration.
+export const playerPhotos = sqliteTable("player_photos", {
+  playerId: text("player_id").primaryKey().references(() => communityPlayers.id),
+  mime: text("mime").notNull(), data: text("data").notNull(), width: integer("width").notNull(), height: integer("height").notNull(),
+  version: integer("version").notNull().default(1), updatedAt: text("updated_at").notNull(),
+});

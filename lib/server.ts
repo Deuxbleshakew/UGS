@@ -1,4 +1,5 @@
 import { store, proofStore } from "./storage";
+import {getSettings as getScheduleSettings} from './scheduling-server';
 import { getCurrentUser, sameOrigin, changePassword, type CurrentUser } from "./auth";
 import seed from "@/data/draw-config.json";
 import { configSchema, reportSchema, validateMatchReport, warnings, standings, managerRows, playerRows, awards, csv, type Config, type Fixture } from "./domain";
@@ -11,9 +12,11 @@ import {getProfile,saveProfile} from './profile-server';
 import {getMatchweeks,changeMatchweeks,requireOpenMatchweek} from './matchweeks-server';
 import {getSchedule,scheduleAction,scheduleAdmin} from './scheduling-server';
 import {getFriendlies,friendlyAction} from './friendlies-server';
+import {photoVersions,getPlayerPhoto,setPlayerPhoto} from './player-photos';
 import {getAvatar,avatarInfo,saveAvatar,removeAvatar,AVATAR_UPLOAD_LIMIT} from './avatar-server';
 import {disableAccount,enableAccount,removeMember} from './user-management';
 import {listSquads,saveSquad,deleteSquad,setSquadsOpen} from './squads';
+import {listTiquicia,changeTiquicia} from './tiquicia';
 import {createTeamPlayoff,recordTeamTie,simulateTeamPlayoff,cancelTeamPlayoff,getTeamPlayoff} from './team-playoffs';
 import {answerParticipation,decideParticipation,isViewerByChoice} from './participation';
 
@@ -117,9 +120,20 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
       if(request.method!=='POST')fail('Method not allowed.',405);
       return json(await changePassword(user,await body(request)));
     }
+    if(path[0]==='tiquicia'&&path.length===1){
+      if(request.method==='GET')return json({players:listTiquicia(),canEdit:user.isOwner});
+      if(request.method==='POST')return json(changeTiquicia(user,await body(request)));
+      fail('Method not allowed.',405);
+    }
     if(path[0]==='participation'&&path.length===1){
       if(request.method!=='POST')fail('Method not allowed.',405);
       return json(answerParticipation(user,await body(request)));
+    }
+    if(path[0]==='player-photo'&&path.length===2&&request.method==='GET'){
+      const a=getPlayerPhoto(path[1]);if(!a)fail('No picture.',404);
+      const etag=`"${a.version}-${a.size}"`,headers={ETag:etag,'Cache-Control':'private, no-cache','X-Content-Type-Options':'nosniff','Cross-Origin-Resource-Policy':'same-origin'};
+      if(request.headers.get('if-none-match')===etag)return new Response(null,{status:304,headers});
+      return new Response(new Uint8Array(a.data),{headers:{...headers,'Content-Type':a.mime,'Content-Length':String(a.size),'Content-Disposition':'inline','Content-Security-Policy':"default-src 'none'"}});
     }
     if(path[0]==='avatar'){
       if(path.length===2&&request.method==='GET'){
@@ -168,7 +182,7 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
       ensurePlayers(t.owner_id);member=await membership(user,tid);
       const config=configSchema.parse(JSON.parse(t.config)),fixtures=await getFixtures(tid);
       const visibleFixtures=fixtures.map(f=>f.status==="finalized"||participant(member,f,config)?f:{...f,report:null,note:null,submitted_by:null});
-      return json({user,profile,onboardingRequired:false,matchweeks:getMatchweeks(tid),tournaments:choices,tournament:{...t,config,awards:t.awards?JSON.parse(t.awards):null},member,fixtures:visibleFixtures,players:listPlayers(t.owner_id),rankings:communityRankings(t.owner_id),clubStars:getClubStars(tid),playoffs:listPlayoffs(tid),accountAccess:user.isOwner?accountDirectory(user):undefined,
+      return json({user,profile,onboardingRequired:false,matchweeks:getMatchweeks(tid),tournaments:choices,tournament:{...t,config,awards:t.awards?JSON.parse(t.awards):null},member,fixtures:visibleFixtures,players:listPlayers(t.owner_id),rankings:communityRankings(t.owner_id),clubStars:getClubStars(tid),playerPhotos:photoVersions(t.owner_id),season:(()=>{const x=getScheduleSettings(tid);return {start:x.season_start,end:x.season_end};})(),playoffs:listPlayoffs(tid),accountAccess:user.isOwner?accountDirectory(user):undefined,
         members:member.role==="admin"?(await all<Member>("SELECT * FROM members WHERE tournament_id=?",tid)).map(m=>({...m,role:tournamentRole(m.user_id===t.owner_id,m.user_id??'',t.owner_id,m.role)})):[],
         audit:member.role==="admin"?await all("SELECT * FROM audit WHERE tournament_id=? ORDER BY at DESC LIMIT 100",tid):[],
       });
@@ -211,6 +225,7 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
     Object.assign(m,await membership(user,tid));
     const c=configSchema.parse(JSON.parse(t.config));
     if(path[2]==="export"&&request.method==="GET"){
+      admin(m);
       const fs=await getFixtures(tid),kind=url.searchParams.get("kind")??"matches";
       let rows:Record<string,unknown>[];
       if(kind==="clubs")rows=standings(c,fs,"all");
@@ -287,6 +302,12 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
     if(path[2]==='users')return json(createPlayerUser(tid,user,data));
     if(path[2]==='viewers')return json(authorizeViewer(tid,user,data));
     if(path[2]==='players')return json(addPlayer(tid,user,data));
+    if(path[2]==='player-photo'&&path.length===3){
+      const d=z.object({playerId:z.string(),image:z.string().max(700000).nullable()}).parse(data);
+      const m2=d.image===null?null:/^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/.exec(d.image);
+      if(d.image!==null&&!m2)fail('Send a JPEG, PNG or WebP picture.');
+      return json(setPlayerPhoto(t.owner_id,d.playerId,m2?new Uint8Array(Buffer.from(m2[2],'base64')):null));
+    }
     if(path[2]==='club-stars'&&!path[3])return json(setClubStars(tid,user,data));
     if(path[2]==='playoffs'&&!path[3])return json(createPlayoff(tid,user,data));
     if(path[2]==='playoffs'&&path[3]&&path[4]==='cancel')return json(cancelPlayoff(tid,path[3],user,data));
