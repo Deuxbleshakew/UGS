@@ -89,12 +89,13 @@ function ResultForm({tie,busy,onSave}:{tie:Tie;busy:boolean;onSave:(body:object)
   const [v,setV]=useState({l1l:'',l1h:'',l2l:'',l2h:'',pl:'',ph:''});
   const n=(x:string)=>x===''?NaN:Number(x),set=(k:keyof typeof v)=>(e:{target:{value:string}})=>setV({...v,[k]:e.target.value.replace(/\D/g,'').slice(0,2)});
   const all=[v.l1l,v.l1h,v.l2l,v.l2h].every(x=>x!==''),low=n(v.l1l)+n(v.l2l),high=n(v.l1h)+n(v.l2h),level=all&&low===high;
-  const ok=all&&(!level||(v.pl!==''&&v.ph!==''&&v.pl!==v.ph));
-  const box=(k:keyof typeof v,label:string)=><label className="tp-score"><span>{label}</span><input inputMode="numeric" value={v[k]} onChange={set(k)} aria-label={label}/></label>;
+  const ok=all&&(!level||(v.pl!==''&&v.ph!==''&&n(v.pl)!==n(v.ph)));
+  const box=(k:keyof typeof v,label:string)=><label className="tp-score"><span>{label}</span><input type="text" inputMode="numeric" pattern="[0-9]*" maxLength={2} placeholder="–" autoComplete="off" disabled={busy} value={v[k]} onChange={set(k)} aria-label={label}/></label>;
   return <div className="tp-result-form">
-    <div>{box('l1l',`${tie.low.team} (leg 1, home)`)}{box('l1h',`${tie.high.team} (leg 1)`)}</div>
-    <div>{box('l2h',`${tie.high.team} (leg 2, home)`)}{box('l2l',`${tie.low.team} (leg 2)`)}</div>
+    <fieldset className="tp-leg"><legend>Leg 1 <span>Home / Away</span></legend>{box('l1l',tie.low.team)}{box('l1h',tie.high.team)}</fieldset>
+    <fieldset className="tp-leg"><legend>Leg 2 <span>Home / Away</span></legend>{box('l2h',tie.high.team)}{box('l2l',tie.low.team)}</fieldset>
+    {all&&<p className="tp-aggregate-preview" aria-live="polite">Aggregate: {tie.high.team} {high}–{low} {tie.low.team}</p>}
     {level&&<div className="tp-pens"><b>Level {low}–{high}. Penalties:</b>{box('pl',`${tie.low.team} pens`)}{box('ph',`${tie.high.team} pens`)}</div>}
-    <button className="btn lime" disabled={busy||!ok} onClick={()=>onSave({leg1:{lowGoals:n(v.l1l),highGoals:n(v.l1h)},leg2:{lowGoals:n(v.l2l),highGoals:n(v.l2h)},...(level?{pens:{low:n(v.pl),high:n(v.ph)}}:{})})}>Save result</button>
+    <button className="btn lime" disabled={busy||!ok} onClick={()=>onSave({leg1:{lowGoals:n(v.l1l),highGoals:n(v.l1h)},leg2:{lowGoals:n(v.l2l),highGoals:n(v.l2h)},...(level?{pens:{low:n(v.pl),high:n(v.ph)}}:{})})}>{busy?'Saving…':'Save both legs'}</button>
   </div>;
 }
