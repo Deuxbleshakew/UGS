@@ -19,9 +19,20 @@ export function database() {
   const db = new DatabaseSync(path.join(dir, 'matchroom.sqlite'), { timeout: 5000 });
   db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');
   try {
+    // Preserve existing player profiles before pruning unclaimed seed slots.
+    // VACUUM INTO includes committed WAL data; copying the live file does not.
+    const ledger = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='app_migrations'").get();
+    if (ledger && db.prepare('SELECT name FROM app_migrations WHERE name=?').get('0024_porto_playoff.sql')
+      && !db.prepare('SELECT name FROM app_migrations WHERE name=?').get('0025_remove_placeholder_managers.sql')) {
+      const backups = path.join(dir, 'backups');
+      mkdirSync(backups, {recursive:true, mode:0o700});
+      const snapshot = path.join(backups, `before-placeholder-cleanup-${Date.now()}.sqlite`);
+      db.prepare('VACUUM INTO ?').run(snapshot);
+      chmodSync(snapshot, 0o600);
+      console.log('Created pre-placeholder-cleanup migration database backup.');
+    }
     // Snapshot existing data before the username transition. VACUUM INTO includes
     // committed WAL data; copying the live SQLite file alone would not be safe.
-    const ledger = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='app_migrations'").get();
     if (ledger && db.prepare('SELECT name FROM app_migrations WHERE name=?').get('0023_saved_playoff_corrections.sql')
       && !db.prepare('SELECT name FROM app_migrations WHERE name=?').get('0024_porto_playoff.sql')) {
       const backups = path.join(dir, 'backups');
@@ -111,7 +122,7 @@ export function database() {
       db.prepare('INSERT INTO app_migrations VALUES(?,?,?)').run(file, checksum, new Date().toISOString());
     }
     db.exec('COMMIT');
-    for (const table of ['club_roster_corrections', 'saved_playoff_corrections', 'team_substitution_reviews']) {
+    for (const table of ['club_roster_corrections', 'saved_playoff_corrections', 'team_substitution_reviews', 'placeholder_manager_cleanup']) {
       const outcomes = db.prepare('SELECT outcome, count(*) AS count FROM ' + table + ' GROUP BY outcome').all();
       console.log(table + ': ' + JSON.stringify(outcomes));
     }
@@ -123,3 +134,4 @@ export function database() {
   globalThis[key] = db;
   return db;
 }
+
