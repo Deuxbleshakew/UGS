@@ -1,4 +1,5 @@
 import {z} from 'zod';
+import {countryCodes} from './countries';
 export const teamSchema=z.object({kind:z.enum(['football','community']),name:z.string().trim().min(1).max(80)});
 export const teamKey=(team:{kind:string;name:string})=>team.kind+':'+team.name.trim().toLowerCase();
 export const profileSchema=z.object({
@@ -7,6 +8,7 @@ export const profileSchema=z.object({
   platforms:z.array(z.enum(['PlayStation','PC','Xbox'])).max(3),
   timezone:z.string().trim().max(100).refine(value=>{if(!value)return true;try{new Intl.DateTimeFormat('en',{timeZone:value});return true;}catch{return false;}},'Choose a valid timezone.'),
   psnId:z.string().trim().max(80),eaId:z.string().trim().max(80),
+  country:z.string().refine(v=>v===''||countryCodes.includes(v),'Choose a country from the list.').optional(),
 }).superRefine((value,ctx)=>{
   const keys=value.teams.map(teamKey);
   if(new Set(keys).size!==keys.length)ctx.addIssue({code:'custom',path:['teams'],message:'Remove duplicate teams.'});

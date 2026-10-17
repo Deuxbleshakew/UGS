@@ -3,7 +3,9 @@ import {useCallback,useEffect,useMemo,useState} from 'react';
 import {Copy,LockKeyhole,Plus,Trash2} from 'lucide-react';
 import {BUILD_UP_NAMES,FORMATIONS,decodeTactic,defaultTactic,encodeTactic,formationByKey,formationLabel,layoutFor,optionLabel,optionsFor,remapRoles,roleName,validateTactic,type BuildUp} from '@/lib/eafc-tactics';
 import {fromShareCode,toShareCode,type Slot} from '@/lib/squad-data';
-import {api,Empty} from './ui';
+import {api,Empty,PlayerFace} from './ui';
+import {assetTeams} from '@/lib/asset-teams';
+import {assetTeamName,squadLabel,useFootballers} from '@/lib/footballers';
 import type {AppState} from './ui';
 
 type Squad={id:string;slotNo:number;name:string;formation:string;buildUp:string;lineHeight:number;slots:Slot[];eaCode:string;version:number;mine:boolean;ownerName:string;clubs:string[]};
@@ -17,6 +19,7 @@ const summary=(s:Squad)=>formationByKey(s.formation)?.positions.map((p,i)=>{cons
 export default function SquadBuilder({state}:{state:AppState|null}){
   const tid=state?.tournament?.id;
   const [data,setData]=useState<Data|null>(null),[error,setError]=useState(''),[note,setNote]=useState(''),[busy,setBusy]=useState(false);
+  const roster=useFootballers(),[sqClub,setSqClub]=useState(''),clubList=useMemo(()=>Object.keys(assetTeams).map(id=>({id,name:assetTeamName(id)})).sort((a,b)=>a.name.localeCompare(b.name)),[]);
   const [draft,setDraft]=useState<Draft>(blank(0)),[pick,setPick]=useState(0),[importUgs,setImportUgs]=useState(''),[importEa,setImportEa]=useState(''),[others,setOthers]=useState('');
   const load=useCallback(async()=>{if(!tid)return;try{const d=await api<Data>(`tournament/${tid}/squads`);setData(d);return d;}catch(e){setError((e as Error).message);}},[tid]);
   useEffect(()=>{void load().then(d=>{const s=d?.squads.find(x=>x.mine&&x.slotNo===0);if(s)setDraft(fromSquad(s));});},[load]);
@@ -76,10 +79,11 @@ export default function SquadBuilder({state}:{state:AppState|null}){
         <div className="sq-pitch" aria-label="Pitch">
           <svg className="sq-lines" viewBox="0 0 100 118" aria-hidden="true"><g fill="none" stroke="rgba(255,255,255,.55)" strokeWidth=".45"><rect x="2" y="2" width="96" height="114" rx="1"/><path d="M2 2h96"/><path d="M38 2a12 12 0 0 0 24 0"/><rect x="21" y="92" width="58" height="24"/><rect x="37" y="107" width="26" height="9"/><path d="M40 92a11 11 0 0 0 20 0"/><circle cx="50" cy="103" r=".7" fill="rgba(255,255,255,.6)"/></g></svg>
           {f.positions.map((p,i)=>{const o=optionsFor(p.pos).find(x=>x.id===draft.slots[i].ea),grp=p.pos==='GK'?'gk':/B$|^CB$/.test(p.pos)?'def':/^(ST|LW|RW)$/.test(p.pos)?'att':'mid';return <button type="button" key={i} className={`sq-card g-${grp}${i===pick?' on':''}`} style={{left:`${layout[i].x}%`,top:`${layout[i].y}%`}} onClick={()=>setPick(i)} aria-label={`${p.pos}: ${o?roleName(o):'?'}`}>
-          <em>{p.pos}</em><b>{o?roleName(o):'?'}</b><span>{o?.focus}</span>{draft.slots[i].player&&<small>{draft.slots[i].player}</small>}</button>;})}</div>
+          <em>{p.pos}</em><b>{o?roleName(o):'?'}</b><span>{o?.focus}</span>{draft.slots[i].player&&<small><PlayerFace name={draft.slots[i].player} size={22}/>{draft.slots[i].player}</small>}</button>;})}</div>
         <div className="sq-edit"><span className="sq-editpos"><i>Editing</i><b>{sel.pos}</b></span>
           <label>Role and focus<select value={selSlot.ea} onChange={e=>setSlot(pick,{ea:Number(e.target.value)})}>{optionsFor(sel.pos).map(o=><option key={o.id} value={o.id}>{optionLabel(o)}</option>)}</select></label>
-          <label>Player (app only, optional)<input value={selSlot.player} maxLength={40} onChange={e=>setSlot(pick,{player:e.target.value})}/></label></div>
+          <label>Pick a club <select value={sqClub} onChange={e=>setSqClub(e.target.value)}><option value="">Any (type a name)</option>{clubList.map(x=><option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
+          <label>Player (app only, optional)<span className="player-input"><PlayerFace name={selSlot.player} size={30}/><input list="sq-squad" value={selSlot.player} maxLength={40} onChange={e=>setSlot(pick,{player:e.target.value})} autoComplete="off"/></span><datalist id="sq-squad">{(roster?.[sqClub]??[]).map(x=><option key={x[0]} value={x[1]}>{squadLabel(x)}</option>)}</datalist></label></div>
         <p className="fine-print">New tactics start from a plain starting point for each position. It is not an optimized setup, so choose the roles you want.</p>
       </section>
       <aside className="panel sq-side">

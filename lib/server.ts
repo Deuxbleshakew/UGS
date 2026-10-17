@@ -9,6 +9,7 @@ import {accountDirectory, assignUsername, authorizePlayer, authorizeViewer, crea
 import { checkPlayoffReport, fixtureSide } from './competition';
 import {tournamentRole} from './access-policy';
 import {getProfile,saveProfile} from './profile-server';
+import {memberCountries} from './countries-server';
 import {getMatchweeks,changeMatchweeks,requireOpenMatchweek} from './matchweeks-server';
 import {getSchedule,scheduleAction,scheduleAdmin} from './scheduling-server';
 import {getFriendlies,friendlyAction} from './friendlies-server';
@@ -184,7 +185,7 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
       ensurePlayers(t.owner_id);member=await membership(user,tid);
       const config=configSchema.parse(JSON.parse(t.config)),fixtures=await getFixtures(tid);
       const visibleFixtures=fixtures.map(f=>f.status==="finalized"||participant(member,f,config)?f:{...f,report:null,note:null,submitted_by:null});
-      return json({user,profile,onboardingRequired:false,matchweeks:getMatchweeks(tid),tournaments:choices,tournament:{...t,config:maskUndrawnManagers(config,member.role==="admin"),awards:t.awards?JSON.parse(t.awards):null},member,fixtures:visibleFixtures,players:listPlayers(t.owner_id),rankings:communityRankings(t.owner_id),clubStars:getClubStars(tid),playerPhotos:photoVersions(t.owner_id),season:(()=>{const x=getScheduleSettings(tid);return {start:x.season_start,end:x.season_end};})(),playoffs:listPlayoffs(tid),accountAccess:user.isOwner?accountDirectory(user):undefined,
+      return json({user,profile,onboardingRequired:false,matchweeks:getMatchweeks(tid),tournaments:choices,tournament:{...t,config:maskUndrawnManagers(config,member.role==="admin"),awards:t.awards?JSON.parse(t.awards):null},member,fixtures:visibleFixtures,players:listPlayers(t.owner_id),rankings:communityRankings(t.owner_id),clubStars:getClubStars(tid),playerPhotos:photoVersions(t.owner_id),countries:memberCountries(tid,config,member.role==="admin"),season:(()=>{const x=getScheduleSettings(tid);return {start:x.season_start,end:x.season_end};})(),playoffs:listPlayoffs(tid),accountAccess:user.isOwner?accountDirectory(user):undefined,
         members:member.role==="admin"?(await all<Member>("SELECT * FROM members WHERE tournament_id=?",tid)).map(m=>({...m,role:tournamentRole(m.user_id===t.owner_id,m.user_id??'',t.owner_id,m.role)})):[],
         audit:member.role==="admin"?await all("SELECT * FROM audit WHERE tournament_id=? ORDER BY at DESC LIMIT 100",tid):[],
       });

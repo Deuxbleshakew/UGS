@@ -366,3 +366,18 @@ ol.gh-list{list-style:decimal}
 .tp-result-form .btn{width:100%;min-height:44px;font-size:14px}
 .tp-aggregate-preview{font-size:13px;line-height:1.5;color:var(--ink)}
 @media(max-width:540px){.tp-card{padding:16px 12px}.tp-tie{padding:14px}.tp-head,.tp-row{grid-template-columns:24px minmax(0,1fr) 30px 30px 34px;gap:4px}.tp-team{font-size:14px}}
+
+/* Country-of-origin flags next to manager names. */
+.flag{display:inline-block;width:18px;height:12px;margin-right:6px;vertical-align:-1px;border-radius:2px;box-shadow:0 0 0 1px rgba(0,0,0,.18);object-fit:cover}
+.club-cell small,.match-scoreboard small{display:flex;align-items:center}
+.club-manager{display:flex;align-items:center;gap:6px}.club-manager .flag{margin:0 0 0 2px}
+.match-scoreboard small{justify-content:center}
+
+/* Asset pack: club crests, footballer heads and squad pick-lists */
+.player-face{display:inline-block;flex:none;border-radius:50%;background-color:#e9eee2;background-repeat:no-repeat;vertical-align:middle;overflow:hidden}
+.player-input{display:flex;align-items:center;gap:8px}.player-input input{flex:1;min-width:0}
+.player-cell{display:inline-flex;align-items:center;gap:9px}
+.events-list>div>.player-face{margin-right:-2px}
+.award-faces{display:flex;gap:8px;margin:10px 0 2px}.award-faces .player-face{box-shadow:0 0 0 2px #fff,0 2px 8px #0003}
+.sq-card small{display:flex;align-items:center;justify-content:center;gap:5px}
+.crest.club-badge img{filter:drop-shadow(0 1px 2px #0003)}

@@ -35,7 +35,7 @@ export default function TournamentApp() {
   const config = tournament?.config ?? initialConfig as Config;
   const fixtures = state?.fixtures ?? [];
   const admin = state?.member?.role === 'admin', owner = !!state?.user.isOwner, ready = !!tournament;
-  const queue = fixtures.filter(f => ['pending', 'confirmed', 'disputed'].includes(f.status));
+  const queue = fixtures.filter(f => ['confirmed', 'disputed'].includes(f.status));
   const inMatchroom = matchroomViews.includes(view), inAdmin = adminViews.includes(view);
   const definition = ugsViews[view], existing = existingViews.includes(view);
   const competition = competitionViews.includes(view);
@@ -110,7 +110,7 @@ export default function TournamentApp() {
     return <a key={id} href={viewHref(id)} onClick={e => follow(e, id)} className={`ugs-nav-link ${view === id ? 'active' : sectionActive ? 'section-active' : ''}`} aria-current={view === id ? 'page' : undefined}>
       <Icon size={18} aria-hidden="true" /><span>{item.label}</span>
       {item.planned && <small className="ugs-nav-planned">Planned</small>}
-      {id === 'review' && queue.length > 0 && <em aria-label={`${queue.length} reports`}>{queue.length}</em>}
+      {id === 'review' && queue.length > 0 && <em aria-label={`${queue.length} ${queue.length === 1 ? 'result needs' : 'results need'} your decision`} title="Needs your decision">{queue.length}</em>}
     </a>;
   }
 
@@ -164,7 +164,7 @@ export default function TournamentApp() {
     </div>
     {toast && <div className="toast" role="status"><CheckCircle2 size={18} />{toast}<button className="icon-btn" aria-label="Dismiss message" onClick={() => setToast('')}><X size={16} /></button></div>}
     {modal === 'switch' && <Modal title="Your tournaments" subtitle="Choose the workspace you want to open." onClose={close}><div className="modal-body">{state?.tournaments.length ? state.tournaments.map(t => <button className="switch-row" key={t.id} onClick={() => saved(t.id).catch(e => setError(e.message))}><Shield size={21} />{t.name}<ChevronRight size={18} /></button>) : <p className="muted">{owner ? 'No tournaments created yet.' : 'No tournaments have been assigned to your account yet.'}</p>}{owner && <button className="btn secondary full" onClick={() => setModal('create')}><Plus size={17} />New tournament</button>}</div></Modal>}
-    {modal === 'match' && selected && tournament && state?.member && <MatchReport fixture={selected} config={config} players={state.players} fixtures={fixtures} tournamentId={tournament.id} user={state.user} member={state.member} timezone={state.profile?.data.timezone} onClose={close} onSaved={() => saved()} />}
+    {modal === 'match' && selected && tournament && state?.member && <MatchReport fixture={selected} config={config} players={state.players} fixtures={fixtures} tournamentId={tournament.id} user={state.user} member={state.member} timezone={state.profile?.data.timezone} matchweeks={state.matchweeks} awardsLocked={!!tournament.locked_at} countries={state.countries} onClose={close} onSaved={() => saved()} />}
     {owner && modal && ['create', 'fixture', 'import', 'awards-lock'].includes(modal) && <WorkspaceDialog type={modal} config={config} tournament={tournament ?? null} onClose={close} onSaved={saved} />}
   </div>;
 }

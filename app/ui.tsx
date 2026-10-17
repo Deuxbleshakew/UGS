@@ -1,7 +1,10 @@
 "use client";
 import {useEffect,useRef,useState,type ReactNode,type CSSProperties} from "react";
 import {clubBadge} from '@/lib/club-badges';
+import {crestUrl} from '@/lib/asset-teams';
+import {useFootballers,findFootballer,findAnywhere,HEAD_COLS,HEAD_CELL} from '@/lib/footballers';
 import {Shield,ClipboardList,X,ChevronRight} from "lucide-react";
+import {countryName} from '@/lib/countries';
 import {statusNames,type Config,type Fixture,type awards} from "@/lib/domain";
 import {fixtureSide,stageLabel,type CommunityPlayer,type EloRow,type Playoff} from '@/lib/competition';
 import type {AccountAccessRow} from '@/lib/account-access';
@@ -10,13 +13,26 @@ import type {Matchweeks} from '@/lib/matchweeks';
 export type User={userId:string;displayName:string;email:string;username:string|null;isOwner:boolean};
 export type Member={id:string;user_id:string|null;email:string;username:string|null;name:string;role:string;manager_id:string|null;player_id?:string|null};
 export type Audit={id:string;actor_name:string;at:string;action:string;reason:string;before:string;after:string};
-export type AppState={matchweeks?:Matchweeks;profile?:ProfileState;onboardingRequired?:boolean;user:User;tournaments:{id:string;name:string;role:string}[];tournament:null|{id:string;name:string;config:Config;locked_at:string|null;awards:ReturnType<typeof awards>|null};member?:Member;fixtures?:Fixture[];members?:Member[];audit?:Audit[];players?:CommunityPlayer[];rankings?:EloRow[];clubStars?:Record<string,number>;playerPhotos?:Record<string,number>;season?:{start:string|null;end:string|null};playoffs?:Playoff[];accountAccess?:AccountAccessRow[]};
+export type AppState={countries?:Record<string,string>;matchweeks?:Matchweeks;profile?:ProfileState;onboardingRequired?:boolean;user:User;tournaments:{id:string;name:string;role:string}[];tournament:null|{id:string;name:string;config:Config;locked_at:string|null;awards:ReturnType<typeof awards>|null};member?:Member;fixtures?:Fixture[];members?:Member[];audit?:Audit[];players?:CommunityPlayer[];rankings?:EloRow[];clubStars?:Record<string,number>;playerPhotos?:Record<string,number>;season?:{start:string|null;end:string|null};playoffs?:Playoff[];accountAccess?:AccountAccessRow[]};
 export const colors=["#283c8b","#e54d54","#39726b","#bd8a28","#7256aa","#3b71a9"];
 export function Crest({club,small=false}:{club?:{id:string;name:string;shortName?:string};small?:boolean}){
-  const badge=clubBadge(club?.name),[failedBadge,setFailedBadge]=useState<string|null>(null);
+  const local=crestUrl(club?.name),badge=clubBadge(club?.name),[failed,setFailed]=useState<string[]>([]);
+  const src=[local,badge].find(u=>u&&!failed.includes(u));
   const hash=[...(club?.id??"")].reduce((a,b)=>a+b.charCodeAt(0),0);
-  if(badge&&failedBadge!==badge)return <span className={`crest club-badge ${small?"small":""}`}><img src={badge} alt={`${club?.name} badge`} loading="lazy" referrerPolicy="no-referrer" onError={()=>setFailedBadge(badge)} style={{width:'100%',height:'100%',objectFit:'contain'}}/></span>;
+  if(src)return <span className={`crest club-badge ${small?"small":""}`}><img src={src} alt={`${club?.name} badge`} loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={()=>setFailed(f=>[...f,src])} style={{width:'100%',height:'100%',objectFit:'contain'}}/></span>;
   return <span className={`crest ${small?"small":""}`} style={{"--club":colors[hash%colors.length]} as CSSProperties}><Shield size={small?27:42} strokeWidth={1.5}/><b>{club?.shortName?.slice(0,3)??club?.name.slice(0,3).toUpperCase()??"FC"}</b></span>;
+}
+/** Head photo of a real footballer from the asset pack, found by club and typed name. Renders nothing when there is no match (free-typed names, clubs outside the pack). */
+import noHead from "@/lib/assets/heads-missing.json";
+export function PlayerFace({club,name,size=32}:{club?:string;name?:string;size?:number}){
+  const roster=useFootballers(),hit=club===undefined?findAnywhere(roster,name):findFootballer(roster,club,name);
+  if(!hit||(noHead as Record<string,number[]>)[hit.teamId]?.includes(hit.index))return null;
+  const col=hit.index%HEAD_COLS,row=Math.floor(hit.index/HEAD_COLS),k=size/HEAD_CELL;
+  return <span className="player-face" aria-hidden="true" style={{width:size,height:size,backgroundImage:`url(/heads/${hit.teamId}.webp)`,backgroundSize:`${HEAD_COLS*HEAD_CELL*k}px auto`,backgroundPosition:`-${col*size}px -${row*size}px`}}/>;
+}
+export function Flag({code,className=''}:{code?:string;className?:string}){
+  if(!code)return null;const name=countryName(code);
+  return <svg className={`flag ${className}`} role="img" aria-label={name} width={18} height={12} viewBox="0 0 3 2" preserveAspectRatio="xMidYMid slice"><title>{name}</title><use href={`/flags/sprite.svg#${code.toLowerCase()}`}/></svg>;
 }
 export function Status({status}:{status:string}){return <span className={`status ${status}`}><i/>{statusNames[status]??status}</span>;}
 export function Empty({title,description,children}:{title:string;description:string;children?:ReactNode}){return <div className="empty"><span className="empty-icon"><ClipboardList size={27}/></span><h3>{title}</h3><p>{description}</p>{children}</div>;}

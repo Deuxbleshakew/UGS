@@ -19,6 +19,21 @@ export function database() {
   const db = new DatabaseSync(path.join(dir, 'matchroom.sqlite'), { timeout: 5000 });
   db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');
   try {
+    // One-time, consistent production snapshot before the asset release starts.
+    // This runs on the attached disk before migrations or request handling.
+    const releaseBackupDir = path.join(dir, 'backups');
+    const releaseBackupPrefix = 'before-claude-assets-';
+    if (!readdirSync(dir).includes('backups') || !readdirSync(releaseBackupDir).some(name => name.startsWith(releaseBackupPrefix))) {
+      mkdirSync(releaseBackupDir, {recursive:true, mode:0o700});
+      const snapshot = path.join(releaseBackupDir, `${releaseBackupPrefix}${Date.now()}.sqlite`);
+      db.prepare('VACUUM INTO ?').run(snapshot);
+      chmodSync(snapshot, 0o600);
+      const check = new DatabaseSync(snapshot, {readOnly:true});
+      try {
+        if (check.prepare('PRAGMA quick_check').get()?.quick_check !== 'ok') throw new Error('Pre-release database backup failed integrity check.');
+      } finally { check.close(); }
+      console.log('Created and verified pre-asset-release database backup.');
+    }
     // Preserve existing player profiles before pruning unclaimed seed slots.
     // VACUUM INTO includes committed WAL data; copying the live file does not.
     const ledger = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='app_migrations'").get();

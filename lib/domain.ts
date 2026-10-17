@@ -42,7 +42,44 @@ export const reportSchema=z.object({homeScore:z.number().int().min(0).max(99),aw
 export type Report=z.infer<typeof reportSchema>;
 export type MatchEvent=z.infer<typeof eventSchema>;
 export type Fixture={id:string;tournament_id:string;home:string;away:string;stage:string;matchday:number;scheduled:string|null;status:string;report:Report|null;submitted_by:string|null;submitted_manager:string|null;submitted_at:string|null;finalized_at:string|null;note:string|null;version:number;kind?:'club'|'player';home_player_id?:string|null;away_player_id?:string|null;tie_id?:string|null;leg?:number|null;playoff_round?:number|null};
-export const statusNames:Record<string,string>={scheduled:"Awaiting report",pending:"Awaiting opponent",confirmed:"Ready to finalize",disputed:"Disputed",correction:"Correction requested",finalized:"Finalized"};
+// Short chip labels. Longer explanations live in statusHelp() below so the wording stays consistent everywhere.
+export const statusNames:Record<string,string>={scheduled:"Awaiting report",pending:"Awaiting opponent",confirmed:"Confirmed · awaiting admin",disputed:"Disputed",correction:"Correction requested",finalized:"Finalized"};
+/** Labels for the admin Review page. "action" groups need an admin decision; "waiting" groups are waiting on someone else. */
+export const reviewLabels={confirmed:"Ready to finalize",disputed:"Disputes to resolve",pending:"Awaiting opponent",correction:"Waiting on manager"} as const;
+export type StatusViewer="admin"|"opponent"|"submitter"|"participant"|"observer";
+export type StatusContext={awardsLocked?:boolean;weekLocked?:boolean};
+/** Plain-language explanation of a result status for the person looking at it. Only describes rules the backend really enforces. */
+export function statusHelp(status:string,viewer:StatusViewer,ctx:StatusContext={}):string{
+  const admin=viewer==="admin",mgr=viewer!=="observer"&&!admin;
+  const base:Record<string,string>={
+    scheduled:admin||mgr?"No result has been submitted yet. Play the match, then submit the score with a final-score screenshot.":"No result has been submitted yet.",
+    pending:admin?"Waiting for the opponent to confirm or dispute. You can finalize it, edit it or request a correction, but finalizing before the opponent confirms needs a reason."
+      :viewer==="opponent"?"Check the score and the screenshot. Confirming accepts the score but does not make it official: an admin still has to finalize it. If it is wrong, dispute it and say why."
+      :viewer==="submitter"?"Waiting for your opponent to confirm or dispute this report. It is not official yet."
+      :mgr?"Waiting for the other manager to confirm or dispute this report. It is not official yet."
+      :"Awaiting opponent response. This result is not official yet.",
+    confirmed:admin?"The opponent confirmed the score. Check the proof, then finalize it to make it official."
+      :mgr?"The opponent confirmed the score, but it is not official until an admin finalizes it."
+      :"Confirmed by the opponent. Awaiting admin finalization. Not official yet.",
+    disputed:admin?"The opponent disputed this result. Read their reason and check the proof, then finalize it, edit it or request a correction."
+      :mgr?"The opponent disputed this result. An admin will review it. It is not official."
+      :"Disputed. Awaiting admin review. Not official.",
+    correction:admin?"A correction was requested. The report is waiting for a manager from either side, or an admin, to update and resubmit it."
+      :mgr?"An admin asked for a correction. Update the report and resubmit it. Either manager can do this."
+      :"A correction was requested. Awaiting an updated report.",
+    finalized:"Official result. It counts toward the table and awards, and it cannot currently be reopened.",
+  };
+  let text=base[status]??"";
+  if(status!=="finalized"&&ctx.weekLocked)text+=" This matchweek is locked, so nothing can be submitted or reviewed until the owner opens it.";
+  else if(admin&&ctx.awardsLocked&&["pending","confirmed","disputed"].includes(status))text+=" Awards are locked, so unlock them before finalizing.";
+  return text.trim();
+}
+/** What the stored note means. The note is overwritten by each action, so this only labels the cases the backend guarantees. */
+// Only labels whose author and purpose the server guarantees. changeFixture is the only writer of status/note: dispute requires an opposing manager's non-empty reason,
+// correction requires an admin's reason, and pending+note can only come from an admin edit (submit stores no note). Confirm/finalize notes may be a system default string, so they stay neutral.
+export function noteLabel(status:string):string{
+  return ({disputed:"Opponent's dispute reason",correction:"Admin's correction request",pending:"Organizer's edit reason",confirmed:"Result note",finalized:"Result note"} as Record<string,string>)[status]??"Result note";
+}
 export function warnings(r:Report,f?:Pick<Fixture,'home'|'away'>):string[]{
   const issues:string[]=[];
   if(r.home.possession!=null&&r.away.possession!=null&&Math.abs(r.home.possession+r.away.possession-100)>1)issues.push("Possession does not total 100% (±1%).");

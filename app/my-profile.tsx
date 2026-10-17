@@ -4,6 +4,7 @@ import seed from '@/data/draw-config.json';
 import {teamKey,type ProfileState,type ProfileData} from '@/lib/profile';
 import {teamChoices} from '@/lib/team-catalog';
 import {commonTimezones} from '@/lib/timezone';
+import {countryOptions} from '@/lib/countries';
 import {api} from './ui';
 import DiscordConnection from './discord-connection';
 import AvatarPicker from './avatar-picker';
@@ -36,6 +37,7 @@ export default function MyProfile({profile,username,userId,onRefresh}:{profile:P
       <label className="field">Username<input readOnly value={username??'Not assigned yet'}/></label>
       {!username&&<p className="notice">You can save your details now. Ask the owner to assign your username to finish setup.</p>}
       <label className="field">Display name<input required maxLength={80} value={data.displayName} onChange={e=>field('displayName',e.target.value)}/></label>
+      <label className="field">Country of origin (optional)<select value={data.country??''} onChange={e=>field('country',e.target.value)}><option value="">Prefer not to say</option>{countryOptions().map(c=><option key={c.code} value={c.code}>{c.name}</option>)}</select></label>
       <h2>Teams you follow</h2>
       <label className="field">Search teams<input type="search" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search football or community teams"/></label>
       <div className="profile-team-options">{choices.filter(t=>t.name.toLowerCase().includes(query.toLowerCase())).map(t=><label key={teamKey(t)}><input type="checkbox" checked={data.teams.some(x=>teamKey(x)===teamKey(t))} onChange={e=>e.target.checked?add(t):remove(teamKey(t))}/><span>{t.name}<small>{t.kind==='football'?'Football club':'Community Clubs team'}</small></span></label>)}</div>
@@ -49,7 +51,7 @@ export default function MyProfile({profile,username,userId,onRefresh}:{profile:P
       <label className="field">Timezone<select value={otherZone||!commonTimezones.some(z=>z.value===data.timezone)&&data.timezone?'__other':data.timezone} onChange={e=>{if(e.target.value==='__other'){setOtherZone(true);}else{setOtherZone(false);field('timezone',e.target.value);}}}><option value="">Choose your timezone</option>{commonTimezones.map(z=><option key={z.value} value={z.value}>{z.label} · {z.value}</option>)}<option value="__other">Other timezone…</option></select></label>
       {(otherZone||(!!data.timezone&&!commonTimezones.some(z=>z.value===data.timezone)))&&<label className="field">Other timezone <small>Full list, for example Asia/Tokyo</small><input list="profile-timezones" value={data.timezone} maxLength={100} placeholder="Region/City" onChange={e=>field('timezone',e.target.value)}/><datalist id="profile-timezones">{timezoneOptions.map(t=><option key={t} value={t}/>)}</datalist></label>}
       <button type="button" className="text-btn" onClick={()=>field('timezone',Intl.DateTimeFormat().resolvedOptions().timeZone)}>Use this device’s timezone</button>
-      <p className="fine-print">Gaming IDs and timezone are stored in your private account profile. Your tournament assignments and historical player names stay unchanged.</p>
+      <p className="fine-print">Gaming IDs and timezone are stored in your private account profile. Your country of origin shows as a flag next to your name once the draw is published. Your tournament assignments and historical player names stay unchanged.</p>
       <button className="btn primary" disabled={busy}>{busy?'Saving…':'Save profile'}</button>
     </fieldset></form>
     {error&&<p className="notice error" role="alert">{error}</p>}{message&&<p className="notice" role="status">{message}</p>}
