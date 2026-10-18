@@ -36,7 +36,7 @@ export function ensurePlayers(ownerId:string){atomic(()=>{
         let player=member?.player_id?one<{id:string}>('SELECT id FROM community_players WHERE id=? AND owner_id=?',member.player_id,ownerId):undefined;
         if(!player&&member)player=one<{id:string}>('SELECT p.id FROM community_players p JOIN members m ON m.player_id=p.id WHERE p.owner_id=? AND ((m.email<>\'\' AND m.email=?) OR (? IS NOT NULL AND m.user_id=?)) LIMIT 1',ownerId,member.email,member.user_id,member.user_id);
         if(!player)player=one<{id:string}>('SELECT p.id FROM community_players p JOIN player_links l ON l.player_id=p.id WHERE p.owner_id=? AND l.manager_id=? AND p.name=? COLLATE NOCASE LIMIT 1',ownerId,manager.id,manager.name.trim());
-        if(!player){player={id:id()};db().prepare('INSERT INTO community_players(id,owner_id,name,created_at) VALUES(?,?,?,?)').run(player.id,ownerId,manager.name.trim(),now());}
+        if(!player){player={id:id()};db().prepare('INSERT INTO community_players(id,owner_id,name,created_at,in_tournament) VALUES(?,?,?,?,?)').run(player.id,ownerId,manager.name.trim(),now(),member?.user_id&&member.user_id===ownerId?0:1);}
         db().prepare('INSERT INTO player_links(tournament_id,manager_id,player_id) VALUES(?,?,?)').run(t.id,manager.id,player.id);link={player_id:player.id};
       }
       db().prepare('UPDATE members SET player_id=? WHERE tournament_id=? AND manager_id=? AND player_id IS NULL').run(link.player_id,t.id,manager.id);
