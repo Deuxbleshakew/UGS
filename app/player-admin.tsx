@@ -22,14 +22,18 @@ export function PlayerAdmin({state,onRefresh}:{state:AppState|null;onRefresh:()=
   const [name,setName]=useState(''),[busy,setBusy]=useState(''),[error,setError]=useState(''),[search,setSearch]=useState('');
   const pick=useRef<HTMLInputElement>(null),target=useRef('');
   const t=state?.tournament,players=(state?.players??[]).filter(p=>p.name.toLowerCase().includes(search.trim().toLowerCase()));
-  if(!t||state?.member?.role!=='admin')return <Empty title="Admins only" description="Only the organizer can add players and photos."/>;
+  if(!t||state?.member?.role!=='admin')return <Empty title="Admins only" description="Only the organizer can manage players and photos."/>;
   async function run(key:string,work:()=>Promise<unknown>){setBusy(key);setError('');try{await work();await onRefresh();}catch(e){setError((e as Error).message);}finally{setBusy('');}}
   const add=()=>run('add',async()=>{await api(`tournament/${t.id}/players`,{name});setName('');});
   const upload=(file?:File)=>{const pid=target.current;if(!file||!pid)return;if(!/^image\/(jpeg|png|webp)$/.test(file.type)){setError('Use a JPEG, PNG or WebP picture.');return;}
     void run(pid,async()=>{await api(`tournament/${t.id}/player-photo`,{playerId:pid,image:await squareJpeg(file)});if(pick.current)pick.current.value='';});};
   const remove=(pid:string)=>run(pid,()=>api(`tournament/${t.id}/player-photo`,{playerId:pid,image:null}));
+  const deletePlayer=(pid:string,playerName:string)=>{
+    if(!window.confirm(`Delete ${playerName} from the player list? Their photo and unused manager slots will also be removed. Players linked to an account, club, or match history cannot be deleted.`))return;
+    void run(pid,()=>api(`tournament/${t.id}/players/delete`,{playerId:pid,name:playerName}));
+  };
   return <>
-    <div className="competition-intro"><div><span className="eyebrow">ADMIN · PLAYERS</span><h2>Players and photos</h2><p>{(state?.players??[]).length} players · Add a player, then give them a photo.</p></div><Users size={34}/></div>
+    <div className="competition-intro"><div><span className="eyebrow">ADMIN · PLAYERS</span><h2>Players and photos</h2><p>{(state?.players??[]).length} players · Add a player, give them a photo, or delete an unused player.</p></div><Users size={34}/></div>
     <section className="panel player-add"><div><h3>Add a player</h3><p>Players can enter playoffs without an assigned club. Authorize their email in Tournament setup.</p></div>
       <form onSubmit={e=>{e.preventDefault();void add();}}><label className="field">Player / gamer name<input value={name} maxLength={80} onChange={e=>setName(e.target.value)}/></label><button className="btn primary" disabled={!name.trim()||busy==='add'}><Plus size={16}/>{busy==='add'?'Adding…':'Add player'}</button></form></section>
     {error&&<p className="inline-error" role="alert">{error}</p>}
@@ -38,7 +42,8 @@ export function PlayerAdmin({state,onRefresh}:{state:AppState|null;onRefresh:()=
       {!players.length?<p className="muted">No players yet.</p>:players.map(p=>{const v=state?.playerPhotos?.[p.id];return <div className="pa-row" key={p.id}>
         <PlayerPhoto id={p.id} name={p.name} version={v} size={48}/><b>{p.name}</b>
         <div className="pa-actions"><button type="button" className="btn secondary" disabled={busy===p.id} onClick={()=>{target.current=p.id;pick.current?.click();}}><Camera size={15}/>{busy===p.id?'Saving…':v==null?'Add photo':'Change photo'}</button>
-          {v!=null&&<button type="button" className="btn secondary" disabled={busy===p.id} onClick={()=>void remove(p.id)}><Trash2 size={15}/>Remove</button>}</div></div>;})}
+          {v!=null&&<button type="button" className="btn secondary" disabled={!!busy} onClick={()=>void remove(p.id)}><Trash2 size={15}/>Remove photo</button>}
+          <button type="button" className="btn secondary" disabled={!!busy} onClick={()=>deletePlayer(p.id,p.name)} aria-label={`Delete player ${p.name}`}><Trash2 size={15}/>Delete player</button></div></div>;})}
     </section>
   </>;
 }

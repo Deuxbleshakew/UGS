@@ -3,6 +3,7 @@ import { database } from '@/scripts/local-store.mjs';
 import { z } from 'zod';
 import type { Config, Fixture } from './domain';
 import { eloRankings, planRound, resolveTie, seedPlayers, type CommunityPlayer, type EloResult, type Playoff, type PlayoffTie, type SeededPlayer } from './competition';
+import {deletePlayerRecord,PlayerDeletionBlocked} from './player-deletion';
 
 export class CompetitionError extends Error { constructor(message:string,public status=400){super(message);} }
 function fail(message:string,status=400):never{throw new CompetitionError(message,status);}
@@ -90,6 +91,22 @@ export function addPlayer(tid:string,user:Actor,input:unknown){
     db().prepare('INSERT INTO community_players(id,owner_id,name,created_at) VALUES(?,?,?,?)').run(p.id,t.owner_id,p.name,p.created_at);
     audit(tid,user,'add-player',null,p);return p;
   });
+}
+
+export function deletePlayer(tid:string,user:Actor,input:unknown){
+  const data=z.object({playerId:z.string().min(1),name:z.string().min(1)}).parse(input);
+  try{return atomic(()=>{
+    const t=unlocked(tid);
+    const player=one<{name:string}>('SELECT name FROM community_players WHERE id=? AND owner_id=?',data.playerId,t.owner_id);
+    if(!player)fail('Player not found. Refresh the list.',404);
+    if(player.name!==data.name)fail('Player details changed. Refresh the list before deleting.',409);
+    const removed=deletePlayerRecord(db(),t.owner_id,data.playerId);
+    audit(tid,user,'delete-player',removed,null);
+    return {ok:true};
+  });}catch(error){
+    if(error instanceof PlayerDeletionBlocked)fail(error.message,409);
+    throw error;
+  }
 }
 
 function insertRound(playoffId:string,tid:string,round:number,entrants:SeededPlayer[],target:number){
