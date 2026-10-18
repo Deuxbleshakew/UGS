@@ -18,4 +18,8 @@ export function assetTeamId(name: string | undefined): string | null {
   if (!exact) build();
   return exact!.get(normalizeName(name)) ?? fuzzy!.get(loose(name)) ?? null;
 }
-export const crestUrl = (name: string | undefined) => { const id = assetTeamId(name); return id ? `/clubs/${id}.webp` : null; };
+const suppliedPngCrests = new Set(['131681', '131682', '32']);
+export const crestUrl = (name: string | undefined) => {
+  const id = assetTeamId(name);
+  return id ? `/clubs/${id}.${suppliedPngCrests.has(id) ? 'png' : 'webp'}` : null;
+};
