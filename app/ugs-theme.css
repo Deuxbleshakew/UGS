@@ -366,3 +366,10 @@ body{overscroll-behavior-y:none;padding-left:env(safe-area-inset-left);padding-r
 .sq-playerportrait .player-face,.sq-card-face .player-face{position:relative;z-index:1}
 html[data-theme="dark"] .sq-edit{border-color:hsl(222 16% 24%)}
 @media (max-width:560px){.sq-rolegrid{grid-template-columns:1fr 1fr}.sq-playergrid{grid-template-columns:repeat(3,1fr)}}
+
+/* squad builder: position player list filters */
+.sq-filters{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:end}
+.sq-allswitch{grid-column:1/-1;display:flex!important;flex-direction:row;align-items:center;gap:8px}
+.sq-allswitch input{width:auto!important;min-height:0!important}
+.sq-playerclub{opacity:.5!important;font-size:.66rem!important}
+@media (max-width:560px){.sq-filters{grid-template-columns:1fr}}
