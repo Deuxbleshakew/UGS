@@ -5,12 +5,12 @@ import {standings} from '@/lib/domain';
 const Step=({n,title,children}:{n:number;title:string;children:React.ReactNode})=><li className="gh-step"><span>{n}</span><div><h3>{title}</h3><p>{children}</p></div></li>;
 
 export function RulesGuide({state}:{state:AppState|null}){
-  const c=state?.tournament?.config,pots=c?.pots.length??0,home=c?.leaguePhase?.homePerPot??0,away=c?.leaguePhase?.awayPerPot??0,perClub=(home+away)*pots;
+  const c=state?.tournament?.config,home=c?.leaguePhase?.homePerPot??0,away=c?.leaguePhase?.awayPerPot??0,perClub=(home+away)*3;
   return <div className="gh">
     <section className="panel gh-hero"><span className="eyebrow">RULES & GUIDE</span><h2>How the competition works</h2><p>Everything a manager needs, from the draw to the final result. Ask an organizer if something is unclear.</p></section>
     <section className="panel"><div className="section-heading"><div><span className="eyebrow">FORMAT</span><h2>The league phase</h2></div></div>
       <ul className="gh-list">
-        <li><b>{c?.clubs.length??'—'} clubs</b> are split into {pots||'—'} pots. Managers are paired with clubs in the draw, and managers stay hidden until it happens.</li>
+        <li>The final <b>36 clubs</b> will be divided into <b>3 pots of 12</b> after qualification and the players’ team-strength vote. Pot assignments are still pending. Managers are paired with clubs in the draw and stay hidden until it happens.</li>
         {perClub>0&&<li>Each club plays <b>{perClub} league matches</b>: {home} at home and {away} away against each pot.</li>}
         <li>A win is 3 points, a draw 1, a loss 0. The table orders by points, then goal difference, then goals scored.</li>
         <li>Positions <b>1–8 qualify directly</b>; positions <b>9–24 play off</b> for the remaining places. The table colours show each zone.</li>

@@ -65,7 +65,7 @@ Use the modern league-phase structure as a sporting reference. Do not reproduce 
 
 UEFA reference: https://www.uefa.com/uefachampionsleague/news/0268-12157d69ce2d-9f011c70f6fa-1000--new-format-for-champions-league-post-2024-everything-you-need-t/
 
-**Current configuration differs:** `data/draw-config.json` has 36 clubs, 12 managers and **3 pots**. With one home and one away opponent per pot, it produces **6 matches per club and 108 fixtures**. It has not been silently changed to the proposed four-pot structure. Reassigning pots requires a deliberate seeding decision and matching Unity configuration.
+**Confirmed Club Champions format:** 36 qualified clubs will be placed in **3 pots of 12** after the players' team-strength vote. With one home and one away opponent per pot, the planned league phase has **6 matches per club and 108 fixtures**. The current `data/draw-config.json` contains 20 qualified clubs and one temporary `Awaiting pot vote` group; final pot assignments and the league draw are pending.
 
 The existing app imports league-phase draws and handles reports, verification, statistics and awards. It does not yet implement the complete play-off / round-of-16 / quarter-final / semi-final bracket. The proposed knockout rules and any qualification interface must be built before claiming that format is supported end to end.
 
