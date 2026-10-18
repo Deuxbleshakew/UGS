@@ -4,7 +4,7 @@ import {formatInZone,validTimezone,zonedLocalToUtc,zoneMessages} from '@/lib/tim
 import {api} from './ui';
 import {Avatar} from './avatar-picker';
 
-type Invitation={logged?:boolean;result?:Result|null;id:string;status:string;proposedAt:string;proposedLocal:string;proposerTimezone:string;message:string|null;version:number;direction:'sent'|'received';myTurn:boolean;proposedByMe:boolean;otherName:string;otherId:string;otherAvatar:number|null};
+type Invitation={elo?:{state:'counts'|'waiting'|'earlier'|'none';canConfirm:boolean}|null;logged?:boolean;result?:Result|null;id:string;status:string;proposedAt:string;proposedLocal:string;proposerTimezone:string;message:string|null;version:number;direction:'sent'|'received';myTurn:boolean;proposedByMe:boolean;otherName:string;otherId:string;otherAvatar:number|null};
 type Ev={id:string;invitationId:string;actorName:string;at:string;action:string;reason:string|null;proposedAt:string|null};
 type Side={goals:number;stars:number|null};
 type Result={mine:Side;theirs:Side;by:string;at:string};
@@ -21,13 +21,15 @@ function ResultBox({inv,busy,onSave}:{inv:Invitation;busy:boolean;onSave:(body:R
   const show=(side:Side)=>side.stars==null?'':` (${side.stars} ★)`;
   return <div className="friendly-result">
     {r&&<p className="friendly-score"><b>You {r.mine.goals}{show(r.mine)} – {r.theirs.goals}{show(r.theirs)} {inv.otherName}</b> <span className="fine-print">entered by {r.by}</span></p>}
+    {r&&inv.elo&&<p className={'friendly-elo friendly-elo-'+inv.elo.state}>{inv.elo.state==='counts'?'Counts for Elo (half weight)':inv.elo.state==='waiting'?(inv.elo.canConfirm?`${inv.otherName} entered this score. Confirm it and it counts for Elo.`:`Waiting for ${inv.otherName} to confirm this score. It counts for Elo once they do.`):inv.elo.state==='earlier'?'Played before friendlies counted for Elo':''}</p>}
+    {r&&inv.elo?.canConfirm&&!open&&<button type="button" className="btn primary" disabled={busy} onClick={()=>onSave({action:'result',id:inv.id,myGoals:r.mine.goals,theirGoals:r.theirs.goals,myStars:r.mine.stars,theirStars:r.theirs.stars})}>Confirm score</button>}
     {!open?<button type="button" className="btn secondary" onClick={()=>setOpen(true)}>{r?'Correct result':'Add result'}</button>:<div className="sched-form">
       <label className="field">Your goals<input inputMode="numeric" maxLength={2} value={mine} onChange={e=>setMine(num(e.target.value))}/></label>
       <label className="field">{inv.otherName}’s goals<input inputMode="numeric" maxLength={2} value={theirs} onChange={e=>setTheirs(num(e.target.value))}/></label>
       {starPick('Your team stars',ms,setMs)}{starPick(`${inv.otherName}’s team stars`,ts,setTs)}
       <button type="button" className="btn primary" disabled={busy||mine===''||theirs===''} onClick={()=>{onSave({action:'result',id:inv.id,myGoals:Number(mine),theirGoals:Number(theirs),myStars:stars(ms),theirStars:stars(ts)});setOpen(false);}}>Save result</button>
       <button type="button" className="btn secondary" onClick={()=>setOpen(false)}>Cancel</button>
-      <p className="fine-print">Score and stars only. It doesn’t change Elo, standings or awards.</p>
+      <p className="fine-print">Counts for Elo at half weight once both players agree on the score. No standings or awards.</p>
     </div>}
   </div>;
 }
@@ -54,7 +56,7 @@ function LogForm({data,timezone,onDone}:{data:Data;timezone?:string;onDone:()=>v
     <label className="field">Note <small>Optional</small><input maxLength={500} value={message} onChange={e=>setMessage(e.target.value)}/></label>
     {error&&<p className="inline-error" role="alert">{error}</p>}
     <button type="button" className="btn primary" disabled={busy||!opp||!when||!timezone||mine===''||theirs===''} onClick={()=>void save()}>{busy?'Saving…':'Save played friendly'}</button>
-    <p className="fine-print">For a game that is already over. It shows in both players’ history, never touches Elo, standings or awards, and either player can correct the score later.</p>
+    <p className="fine-print">For a game that is already over. It shows in both players’ history and counts for Elo at half weight once the other player confirms the score. Either player can correct the score later.</p>
   </div>;
 }
 export default function Friendlies({timezone}:{timezone?:string}){
@@ -104,7 +106,7 @@ export default function Friendlies({timezone}:{timezone?:string}){
   };
   return <section className="panel friendlies-panel" aria-labelledby="friendlies-heading">
     <h2 id="friendlies-heading" className="visually-hidden">Friendlies</h2>
-    <p className="fine-print">Casual matches between two players. After you play, add the score and each team’s stars. They don’t affect Elo, standings, awards or qualification, and need no proof. Times show in {zone}.</p>
+    <p className="fine-print">Casual matches between two players. After you play, add the score and each team’s stars. Once both players agree on the score it counts for Elo at half weight. No standings, awards or proof. Times show in {zone}.</p>
     {error&&<p className="inline-error" role="alert">{error}</p>}
     {!data.me.eligible?<p className="notice">{data.me.reason??'Friendlies are not available to you yet.'}</p>:<>
       <details className="schedule-editor" open={!data.invitations.length}><summary>Invite a player</summary>

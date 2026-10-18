@@ -8,9 +8,10 @@ import {missingProfile,profileSchema,type ProfileData} from './profile';
 import {getSettings,overlaps,sideOf} from './scheduling-server';
 import {avatarVersion} from './avatar-server';
 import {isViewerByChoice} from './participation';
+import {evaluateFriendlies} from './friendly-elo';
 import {zonedLocalToUtc,zoneMessages} from './timezone';
 
-// Friendly invitations. A friendly is not a fixture: it never touches Elo, standings, awards, proof or results.
+// Friendly invitations. A friendly is not a fixture: it has no standings, awards or proof. Once both players agree on the score it counts for Elo at half weight (see friendly-elo.ts).
 // Only the two participants can see or act on an invitation. Eligible = a participant (or the owner) with a finished profile.
 type Actor={userId:string;displayName:string};
 type Inv={id:string;inviter_id:string;invitee_id:string;pair_key:string;status:string;proposed_at:string;proposed_local:string;proposer_timezone:string;proposed_by:string;turn_id:string|null;message:string|null;created_at:string;updated_at:string;version:number};
@@ -115,7 +116,7 @@ export function friendlyAction(actor:Actor,input:unknown){
     }
     if(data.action==='log'){
       // A friendly that was already played: recorded straight away as an accepted game with its score. No invitation, no waiting.
-      // It never touches Elo, standings or awards. The organizer may log a game between two other players.
+      // Counts for Elo once the other player confirms the score (or straight away when the organizer logs it for two other players). The organizer may log a game between two other players.
       const owner=profileOf(actor.userId)?.a.owner===1,firstId=data.asPlayerId&&data.asPlayerId!==actor.userId?data.asPlayerId:actor.userId;
       if(firstId!==actor.userId&&!owner)fail('Only the organizer can log a friendly between two other players.',403);
       if(firstId===data.opponentId)fail('Choose two different players.');
@@ -133,7 +134,7 @@ export function friendlyAction(actor:Actor,input:unknown){
     const inv=d.prepare('SELECT * FROM friendly_invitations WHERE id=?').get(data.id) as Inv|undefined;
     if(!inv||(inv.inviter_id!==actor.userId&&inv.invitee_id!==actor.userId))return fail('Invitation not found.',404);
     if(data.action==='result'){
-      // A result is just a score and the stars of each team. It never touches Elo, standings or awards. The latest entry wins, so either player can correct a typo.
+      // A result is a score and the stars of each team. It counts for Elo once the other player enters or confirms the same score. The latest entry wins, so either player can correct a typo.
       if(inv.status!=='accepted')fail('Only an accepted friendly can have a result.',409);
       if(new Date(inv.proposed_at).getTime()>Date.now())fail('This friendly has not started yet. Add the result once it has been played.',409);
       const mine=inv.inviter_id===actor.userId;
@@ -187,9 +188,11 @@ export function getFriendlies(actor:Actor){
   const results=new Map<string,{inviter:{goals:number;stars:number|null};invitee:{goals:number;stars:number|null};by:string;at:string}>();
   for(const r of resultRows){try{results.set(r.id,{...JSON.parse(r.reason),by:r.actorName,at:r.at});}catch{/* ignore a malformed row */}}
   const loggedIds=new Set((events as unknown as {invitationId:string;action:string}[]).filter(e=>e.action==='logged').map(e=>e.invitationId));
+  const eloStates=evaluateFriendlies();
   const invitations=invitationsBase.map(i=>{
     const r=results.get(i.id),mine=rows.find(x=>x.id===i.id)!.inviter_id===actor.userId;
-    return {...i,logged:loggedIds.has(i.id),result:r?{mine:mine?r.inviter:r.invitee,theirs:mine?r.invitee:r.inviter,by:r.by,at:r.at}:null};
+    const ev=eloStates.get(i.id);
+    return {...i,logged:loggedIds.has(i.id),elo:ev?{state:ev.state,canConfirm:ev.state==='waiting'&&ev.needs===actor.userId}:null,result:r?{mine:mine?r.inviter:r.invitee,theirs:mine?r.invitee:r.inviter,by:r.by,at:r.at}:null};
   });
   const directory=me.ok?(d.prepare('SELECT id FROM accounts WHERE id<>?').all(actor.userId) as {id:string}[]).map(a=>({id:a.id,e:eligibility(a.id)})).filter(x=>x.e.ok&&x.e.name).map(x=>({id:x.id,name:x.e.name})).sort((a,b)=>a.name.localeCompare(b.name)):[];
   // Owner only: explain why someone is missing from the invite list, so an empty dropdown is never a mystery.

@@ -1,3 +1,4 @@
+import {friendlyEloResults} from './friendly-elo';
 import type { DatabaseSync, SQLInputValue } from 'node:sqlite';
 import { database } from '@/scripts/local-store.mjs';
 import { z } from 'zod';
@@ -79,6 +80,7 @@ export function communityRankings(ownerId:string){
     AND NOT EXISTS(SELECT 1 FROM members m WHERE m.player_id=l.player_id AND m.user_id IS NOT NULL)
     AND NOT EXISTS(SELECT 1 FROM members m JOIN player_links l2 ON l2.tournament_id=m.tournament_id AND l2.manager_id=m.manager_id WHERE l2.player_id=l.player_id AND m.user_id IS NOT NULL)`,ownerId).map(r=>r.player_id));
   const rated=new Set(events.flatMap(e=>[e.home,e.away]));
+  events.push(...friendlyEloResults());
   // People the organizer marked as "just following" stay out of the table, but their results still count for opponents.
   const table=eloRankings(listPlayers(ownerId).filter(p=>!placeholders.has(p.id)||rated.has(p.id)||p.in_tournament===0),events);
   return table.filter(p=>p.in_tournament!==0).map((p,i)=>({...p,rank:i+1}));

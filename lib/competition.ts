@@ -3,7 +3,7 @@ import type { Config, Fixture, Report } from './domain';
 export const ELO_START = 1000;
 export const ELO_K = 32;
 export type CommunityPlayer = { id:string; name:string; created_at:string; in_tournament?:number };
-export type EloResult = { id:string; home:string; away:string; score:number; at:string; order:number; homeStars?:number; awayStars?:number };
+export type EloResult = { id:string; home:string; away:string; score:number; at:string; order:number; homeStars?:number; awayStars?:number; weight?:number };
 // Beating a higher-rated club is worth more, beating a lower-rated one less; losing with the better club costs more. No stars = neutral.
 export const STAR_WEIGHT=0.2,STAR_MIN=0.7,STAR_MAX=1.4;
 export function starMultiplier(change:number,own?:number,opp?:number){
@@ -24,7 +24,7 @@ export function eloRankings(players:CommunityPlayer[], results:EloResult[]):EloR
     const home=rows.get(match.home),away=rows.get(match.away);
     if(!home||!away||home.id===away.id)continue;
     const expected=1/(1+10**((away.rating-home.rating)/400));
-    const delta=Math.round(ELO_K*(match.score-expected)*1e6)/1e6;
+    const delta=Math.round(ELO_K*(match.score-expected)*(match.weight??1)*1e6)/1e6;
     for(const [row,base,score,own,opp] of [[home,delta,match.score,match.homeStars,match.awayStars],[away,-delta,1-match.score,match.awayStars,match.homeStars]] as const){
       const change=Math.round(base*starMultiplier(base,own,opp)*1e6)/1e6;
       row.rating=Math.round((row.rating+change)*1e6)/1e6;row.lastChange=change;row.peak=Math.max(row.peak,row.rating);row.played++;
