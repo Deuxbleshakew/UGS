@@ -412,3 +412,12 @@ ol.gh-list{list-style:decimal}
 .pot-section{margin:18px 0}.pot-heading{display:flex;align-items:baseline;gap:10px;margin:0 0 10px}.pot-heading small{opacity:.65;font-weight:500;font-size:.8rem}
 .tbd-card{opacity:.7;border-style:dashed}.tbd-shield.big{width:44px;height:44px;border-radius:12px;font-size:1.2rem}.qualified-card{opacity:.92}
 .kb-field-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px}.kb-field-team{display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--line,rgba(128,128,128,.3));border-radius:10px}.kb-field-team.tbd{border-style:dashed;opacity:.6}.kb-field-team b{font-weight:600;font-size:.88rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* Club squad panel (Clubs tab > View squad) */
+.club-squad{margin:0 0 18px}.club-squad-head{display:flex;align-items:center;gap:12px;margin-bottom:12px}.club-squad-head>div{flex:1;min-width:0}.club-squad-head h3{margin:0}.club-squad-head p{margin:2px 0 0}
+.club-squad-btn{margin-top:10px;width:100%}
+.squad-group{margin:14px 0 0}.squad-group h4{margin:0 0 8px;font-size:.85rem;letter-spacing:.06em;text-transform:uppercase;opacity:.8}.squad-group h4 small{opacity:.6;margin-left:4px}
+.squad-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px;align-items:start}
+.squad-player{border:1px solid var(--line,rgba(128,128,128,.3));border-radius:12px;padding:8px 10px}.squad-player summary{display:flex;align-items:center;gap:10px;cursor:pointer;list-style:none}.squad-player summary::-webkit-details-marker{display:none}
+.squad-player summary span{display:flex;flex-direction:column;min-width:0}.squad-player summary b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.squad-player summary small{opacity:.7}
+.squad-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:10px 0 0;text-align:center}.squad-stats dt{font-size:.7rem;opacity:.65}.squad-stats dd{margin:0;font-weight:700}.squad-stats .fine-print{grid-column:1/-1;margin:4px 0 0;text-align:left}
