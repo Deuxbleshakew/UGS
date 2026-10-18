@@ -2,7 +2,7 @@ import type { Config, Fixture, Report } from './domain';
 
 export const ELO_START = 1000;
 export const ELO_K = 32;
-export type CommunityPlayer = { id:string; name:string; created_at:string };
+export type CommunityPlayer = { id:string; name:string; created_at:string; in_tournament?:number };
 export type EloResult = { id:string; home:string; away:string; score:number; at:string; order:number; homeStars?:number; awayStars?:number };
 // Beating a higher-rated club is worth more, beating a lower-rated one less; losing with the better club costs more. No stars = neutral.
 export const STAR_WEIGHT=0.2,STAR_MIN=0.7,STAR_MAX=1.4;

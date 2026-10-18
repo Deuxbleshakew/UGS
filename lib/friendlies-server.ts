@@ -36,6 +36,7 @@ export function eligibility(accountId:string):Eligibility{
   if(db().prepare('SELECT 1 FROM account_status WHERE account_id=?').get(accountId))return {ok:false,name,timezone,reason:'This account is disabled.'};
   const participant=!!db().prepare("SELECT 1 FROM members WHERE user_id=? AND role IN ('manager','participant') LIMIT 1").get(accountId);
   if(p.a.owner!==1&&isViewerByChoice(accountId))return {ok:false,name,timezone,reason:'You chose to follow as a viewer. You can change that in My Profile; the organizer approves it.'};
+  if(p.a.owner!==1&&db().prepare('SELECT 1 FROM community_players cp WHERE cp.in_tournament=0 AND (cp.id IN (SELECT player_id FROM account_usernames WHERE account_id=?) OR cp.id IN (SELECT player_id FROM members WHERE user_id=?))').get(accountId,accountId))return {ok:false,name,timezone,reason:'The organizer has you down as following only, so friendlies are closed to you.'};
   if(!participant&&p.a.owner!==1)return {ok:false,name,timezone,reason:'Friendlies are open to participants. Viewers cannot take part yet.'};
   if(p.a.owner!==1&&missingProfile(p.data,p.a.username,true).length)return {ok:false,name,timezone,reason:'Finish your profile first.'};
   return {ok:true,name,timezone};

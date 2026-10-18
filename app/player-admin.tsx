@@ -1,6 +1,6 @@
 'use client';
 import {useRef,useState} from 'react';
-import {Camera,Plus,Trash2,Users} from 'lucide-react';
+import {Camera,Plus,Trash2,Users, Pencil} from 'lucide-react';
 import {api,Empty,type AppState} from './ui';
 
 const initials=(n:string)=>n.trim().split(/\s+/).slice(0,2).map(p=>p[0]?.toUpperCase()??'').join('')||'?';
@@ -28,6 +28,12 @@ export function PlayerAdmin({state,onRefresh}:{state:AppState|null;onRefresh:()=
   const upload=(file?:File)=>{const pid=target.current;if(!file||!pid)return;if(!/^image\/(jpeg|png|webp)$/.test(file.type)){setError('Use a JPEG, PNG or WebP picture.');return;}
     void run(pid,async()=>{await api(`tournament/${t.id}/player-photo`,{playerId:pid,image:await squareJpeg(file)});if(pick.current)pick.current.value='';});};
   const remove=(pid:string)=>run(pid,()=>api(`tournament/${t.id}/player-photo`,{playerId:pid,image:null}));
+  const rename=(pid:string,current:string)=>{
+    const next=window.prompt('Player name',current);
+    if(next==null||!next.trim()||next.trim()===current)return;
+    void run(pid,()=>api(`tournament/${t.id}/players/update`,{playerId:pid,name:next.trim()}));
+  };
+  const setIn=(pid:string,inTournament:boolean)=>run(pid,()=>api(`tournament/${t.id}/players/update`,{playerId:pid,inTournament}));
   const deletePlayer=(pid:string,playerName:string)=>{
     if(!window.confirm(`Delete ${playerName} from the player list? Their photo and unused manager slots will also be removed.`))return;
     void run(pid,async()=>{
@@ -39,15 +45,15 @@ export function PlayerAdmin({state,onRefresh}:{state:AppState|null;onRefresh:()=
     });
   };
   return <>
-    <div className="competition-intro"><div><span className="eyebrow">ADMIN · PLAYERS</span><h2>Players and photos</h2><p>{(state?.players??[]).length} players · Add a player, give them a photo, or delete an unused player.</p></div><Users size={34}/></div>
+    <div className="competition-intro"><div><span className="eyebrow">ADMIN · PLAYERS</span><h2>Players and photos</h2><p>{(state?.players??[]).length} players · Rename players, choose who plays in the tournament, add photos, or delete a player.</p></div><Users size={34}/></div>
     <section className="panel player-add"><div><h3>Add a player</h3><p>Players can enter playoffs without an assigned club. Authorize their email in Tournament setup.</p></div>
       <form onSubmit={e=>{e.preventDefault();void add();}}><label className="field">Player / gamer name<input value={name} maxLength={80} onChange={e=>setName(e.target.value)}/></label><button className="btn primary" disabled={!name.trim()||busy==='add'}><Plus size={16}/>{busy==='add'?'Adding…':'Add player'}</button></form></section>
     {error&&<p className="inline-error" role="alert">{error}</p>}
     <input ref={pick} className="avatar-file" type="file" accept="image/jpeg,image/png,image/webp" tabIndex={-1} aria-label="Choose a player photo" onChange={e=>upload(e.target.files?.[0])}/>
     <section className="panel pa-list"><label className="field pa-search">Search players<input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Find a player"/></label>
       {!players.length?<p className="muted">No players yet.</p>:players.map(p=>{const v=state?.playerPhotos?.[p.id];return <div className="pa-row" key={p.id}>
-        <PlayerPhoto id={p.id} name={p.name} version={v} size={48}/><b>{p.name}</b>
-        <div className="pa-actions"><button type="button" className="btn secondary" disabled={busy===p.id} onClick={()=>{target.current=p.id;pick.current?.click();}}><Camera size={15}/>{busy===p.id?'Saving…':v==null?'Add photo':'Change photo'}</button>
+        <PlayerPhoto id={p.id} name={p.name} version={v} size={48}/><span className="pa-name"><b>{p.name}</b><label className="pa-switch"><input type="checkbox" role="switch" checked={p.in_tournament!==0} disabled={busy===p.id} onChange={e=>void setIn(p.id,e.target.checked)}/><span>{p.in_tournament===0?'Just following':'Plays in the tournament'}</span></label></span>
+        <div className="pa-actions"><button type="button" className="btn secondary" disabled={!!busy} onClick={()=>rename(p.id,p.name)} aria-label={`Rename ${p.name}`}><Pencil size={15}/>Rename</button><button type="button" className="btn secondary" disabled={busy===p.id} onClick={()=>{target.current=p.id;pick.current?.click();}}><Camera size={15}/>{busy===p.id?'Saving…':v==null?'Add photo':'Change photo'}</button>
           {v!=null&&<button type="button" className="btn secondary" disabled={!!busy} onClick={()=>void remove(p.id)}><Trash2 size={15}/>Remove photo</button>}
           <button type="button" className="btn secondary" disabled={!!busy} onClick={()=>deletePlayer(p.id,p.name)} aria-label={`Delete player ${p.name}`}><Trash2 size={15}/>Delete player</button></div></div>;})}
     </section>

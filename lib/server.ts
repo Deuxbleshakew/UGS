@@ -4,7 +4,7 @@ import { getCurrentUser, sameOrigin, changePassword, type CurrentUser } from "./
 import seed from "@/data/draw-config.json";
 import { configSchema, reportSchema, validateMatchReport, warnings, standings, managerRows, playerRows, awards, csv, type Config, type Fixture } from "./domain";
 import { z } from "zod";
-import { ensurePlayers, listPlayers, communityRankings, listPlayoffs, managerPlayer, addPlayer, deletePlayer, createPlayoff, advancePlayoff, autoAdvancePlayoffs, cancelPlayoff, getClubStars, setClubStars, CompetitionError } from './competition-server';
+import { ensurePlayers, listPlayers, communityRankings, listPlayoffs, managerPlayer, addPlayer, updatePlayer, deletePlayer, createPlayoff, advancePlayoff, autoAdvancePlayoffs, cancelPlayoff, getClubStars, setClubStars, CompetitionError } from './competition-server';
 import {accountDirectory, assignUsername, authorizePlayer, authorizeViewer, createPlayerUser, AccountAccessError} from './account-access';
 import { checkPlayoffReport, fixtureSide } from './competition';
 import {tournamentRole} from './access-policy';
@@ -313,6 +313,7 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
     if(path[2]==='users')return json(createPlayerUser(tid,user,data));
     if(path[2]==='viewers')return json(authorizeViewer(tid,user,data));
     if(path[2]==='players'&&path.length===3)return json(addPlayer(tid,user,data));
+    if(path[2]==='players'&&path.length===4&&path[3]==='update')return json(updatePlayer(tid,user,data));
     if(path[2]==='players'&&path.length===4&&path[3]==='delete')return json(deletePlayer(tid,user,data));
     if(path[2]==='player-photo'&&path.length===3){
       const d=z.object({playerId:z.string(),image:z.string().max(700000).nullable()}).parse(data);

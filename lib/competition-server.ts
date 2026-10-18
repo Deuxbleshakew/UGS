@@ -49,7 +49,7 @@ export function ensurePlayers(ownerId:string){atomic(()=>{
   }
 });}
 
-export function listPlayers(ownerId:string):CommunityPlayer[]{return rows<CommunityPlayer>('SELECT id,name,created_at FROM community_players WHERE owner_id=? ORDER BY name,id',ownerId);}
+export function listPlayers(ownerId:string):CommunityPlayer[]{return rows<CommunityPlayer>('SELECT id,name,created_at,in_tournament FROM community_players WHERE owner_id=? ORDER BY name,id',ownerId);}
 export function managerPlayer(tid:string,managerId?:string){return managerId?one<{player_id:string}>('SELECT player_id FROM player_links WHERE tournament_id=? AND manager_id=?',tid,managerId)?.player_id??null:null;}
 export function listPlayoffs(tid:string):Playoff[]{
   return rows<Record<string,unknown>>('SELECT * FROM playoffs WHERE tournament_id=? AND status<>\'cancelled\' ORDER BY created_at DESC,id',tid).map(p=>({...p,entrants:JSON.parse(String(p.entrants)),automatic_qualifiers:JSON.parse(String(p.automatic_qualifiers)),qualified:JSON.parse(String(p.qualified)),ties:rows<PlayoffTie>('SELECT * FROM playoff_ties WHERE playoff_id=? ORDER BY round,position',String(p.id))} as Playoff));
@@ -79,7 +79,9 @@ export function communityRankings(ownerId:string){
     AND NOT EXISTS(SELECT 1 FROM members m WHERE m.player_id=l.player_id AND m.user_id IS NOT NULL)
     AND NOT EXISTS(SELECT 1 FROM members m JOIN player_links l2 ON l2.tournament_id=m.tournament_id AND l2.manager_id=m.manager_id WHERE l2.player_id=l.player_id AND m.user_id IS NOT NULL)`,ownerId).map(r=>r.player_id));
   const rated=new Set(events.flatMap(e=>[e.home,e.away]));
-  return eloRankings(listPlayers(ownerId).filter(p=>!placeholders.has(p.id)||rated.has(p.id)),events);
+  // People the organizer marked as "just following" stay out of the table, but their results still count for opponents.
+  const table=eloRankings(listPlayers(ownerId).filter(p=>!placeholders.has(p.id)||rated.has(p.id)||p.in_tournament===0),events);
+  return table.filter(p=>p.in_tournament!==0).map((p,i)=>({...p,rank:i+1}));
 }
 
 export function addPlayer(tid:string,user:Actor,input:unknown){
@@ -90,6 +92,24 @@ export function addPlayer(tid:string,user:Actor,input:unknown){
     const p={id:id(),name:data.name,created_at:now()};
     db().prepare('INSERT INTO community_players(id,owner_id,name,created_at) VALUES(?,?,?,?)').run(p.id,t.owner_id,p.name,p.created_at);
     audit(tid,user,'add-player',null,p);return p;
+  });
+}
+
+export function updatePlayer(tid:string,user:Actor,input:unknown){
+  const data=z.object({playerId:z.string().min(1),name:z.string().trim().min(1).max(80).optional(),inTournament:z.boolean().optional()}).parse(input);
+  if(data.name===undefined&&data.inTournament===undefined)fail('Nothing to change.');
+  return atomic(()=>{
+    const t=tournament(tid);
+    const before=one<{id:string;name:string;in_tournament:number}>('SELECT id,name,in_tournament FROM community_players WHERE id=? AND owner_id=?',data.playerId,t.owner_id);
+    if(!before)fail('Player not found. Refresh the list.',404);
+    if(data.name!==undefined&&data.name!==before.name){
+      if(one('SELECT id FROM community_players WHERE owner_id=? AND name=? COLLATE NOCASE AND id<>?',t.owner_id,data.name,before.id))fail('Another player already has that name.',409);
+      db().prepare('UPDATE community_players SET name=? WHERE id=?').run(data.name,before.id);
+    }
+    if(data.inTournament!==undefined)db().prepare('UPDATE community_players SET in_tournament=? WHERE id=?').run(data.inTournament?1:0,before.id);
+    const after=one<{id:string;name:string;in_tournament:number}>('SELECT id,name,in_tournament FROM community_players WHERE id=?',before.id);
+    audit(tid,user,'update-player',before,after);
+    return {ok:true,player:after};
   });
 }
 

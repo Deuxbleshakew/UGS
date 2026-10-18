@@ -3,6 +3,7 @@ import "./globals.css";
 import "./competition.css";
 import "./ugs.css";
 import "./ugs-dark.css";
+import "./ugs-theme.css";
 
 export const metadata: Metadata = {
   title: "Union Gaming Society · UGS",
@@ -19,7 +20,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{__html: "try{var t=localStorage.getItem('ugs-theme');var d=t==='dark'||(t!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.dataset.theme=d?'dark':'light'}catch(e){}"}} />
+      </head>
       <body className="antialiased">{children}</body>
     </html>
   );

@@ -1,0 +1,16 @@
+/* Dark mode. The site's colours are written directly in many places, so dark mode inverts the page as a whole and
+   puts pictures and the already-dark areas back the right way round. Switched by <html data-theme="dark">. */
+html[data-theme="dark"]{filter:invert(1) hue-rotate(180deg);background:#fff;color-scheme:dark}
+html[data-theme="dark"] :where(img,video,picture,canvas,.avatar,.sidebar,.season-hero,.ugs-hero-art,.player-face,.club-crest){filter:invert(1) hue-rotate(180deg)}
+html[data-theme="dark"] :where(.sidebar,.season-hero,.ugs-hero-art,.avatar) :where(img,video,picture,canvas,.avatar){filter:none}
+html[data-theme="dark"] ::selection{background:#3a5f9d;color:#fff}
+.theme-toggle{margin-right:2px}
+@media print{html[data-theme="dark"]{filter:none}html[data-theme="dark"] :where(img,video,picture,canvas,.avatar,.sidebar,.season-hero,.ugs-hero-art){filter:none}}
+.pa-name{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1}
+.pa-switch{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);cursor:pointer}
+.pa-switch input{width:34px;height:18px;appearance:none;-webkit-appearance:none;border-radius:999px;background:#b9b3a3;position:relative;cursor:pointer;margin:0;transition:background .15s}
+.pa-switch input::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;transition:transform .15s}
+.pa-switch input:checked{background:var(--ugs-blue,#2f5f9e)}
+.pa-switch input:checked::after{transform:translateX(16px)}
+.pa-switch input:disabled{opacity:.5;cursor:wait}
+.pa-switch input:focus-visible{outline:2px solid #467bd7;outline-offset:2px}

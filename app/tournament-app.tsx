@@ -8,6 +8,7 @@ import Views from './views';
 import MatchReport from './match-report';
 import WorkspaceDialog from './workspace-dialog';
 import UgsBrand from './ugs-brand';
+import ThemeToggle from './theme-toggle';
 import UgsSections from './ugs-sections';
 import MyProfile from './my-profile';
 import MatchweekPanel from './matchweek-panel';
@@ -155,7 +156,7 @@ export default function TournamentApp() {
       <header className="topbar">
         <button ref={menuRef} className="icon-btn mobile-menu" aria-label={mobile ? 'Close navigation' : 'Open navigation'} aria-controls="ugs-sidebar" aria-expanded={mobile} onClick={() => setMobile(!mobile)}><Menu /></button>
         <div className="breadcrumb"><a href={viewHref('home')} onClick={e => follow(e, 'home')}>UGS</a><ChevronRight size={14} />{(competition || view === 'elo' || view === 'friendlies' || view === 'history') && <><a href={viewHref('matchroom')} onClick={e => follow(e, 'matchroom')}>UCL</a><ChevronRight size={14} /></>}{competition && <span className="ugs-competition-crumb">Club Champions <ChevronRight size={14} /></span>}<strong>{definition.label}</strong></div>
-        <div className="topbar-right"><span className="private-label"><LockKeyhole size={13} />Members only</span><span className="avatar small">{state?.user.displayName.slice(0, 1).toUpperCase() ?? 'U'}</span></div>
+        <div className="topbar-right"><ThemeToggle /><span className="private-label"><LockKeyhole size={13} />Members only</span><span className="avatar small">{state?.user.displayName.slice(0, 1).toUpperCase() ?? 'U'}</span></div>
       </header>
       <main id="ugs-main" ref={mainRef} tabIndex={-1} className="ugs-main">
         {loading && <div className="notice" role="status"><Loader2 className="spin" size={18} />Opening Union Gaming…</div>}
