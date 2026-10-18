@@ -383,5 +383,6 @@ ol.gh-list{list-style:decimal}
 .crest.club-badge img{filter:drop-shadow(0 1px 2px #0003)}
 
 .tp-team{display:inline-flex;align-items:center;gap:9px}.tp-crest{display:inline-flex;flex:none;width:28px;height:28px}.tp-crest .crest{width:100%;height:100%;min-width:0;padding:0;display:inline-flex}.tp-crest.small{width:20px;height:20px;margin-right:6px;vertical-align:middle}.tp-score>span{display:inline-flex;align-items:center}
+.tp-crest .crest svg{max-width:100%;max-height:100%}.tp-crest .crest b{font-size:6px}.tp-crest.small .crest b{font-size:5px}
 
 .friendly-result{margin-top:10px}.friendly-score{margin:6px 0}.friendly-result .sched-form{display:grid;gap:10px}

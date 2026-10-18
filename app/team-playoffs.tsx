@@ -85,7 +85,7 @@ export default function TeamPlayoffs({state}:{state:AppState|null}){
   </div>;
 }
 
-function TeamMark({name,small=false}:{name:string;small?:boolean}){return <span className={`tp-crest${small?' small':''}`} aria-hidden="true"><Crest club={{id:name,name}}/></span>;}
+function TeamMark({name,small=false}:{name:string;small?:boolean}){return <span className={`tp-crest${small?' small':''}`} aria-hidden="true"><Crest club={{id:name,name}} small/></span>;}
 function ResultForm({tie,busy,onSave}:{tie:Tie;busy:boolean;onSave:(body:object)=>void}){
   const [v,setV]=useState({l1l:'',l1h:'',l2l:'',l2h:'',pl:'',ph:''});
   const n=(x:string)=>x===''?NaN:Number(x),set=(k:keyof typeof v)=>(e:{target:{value:string}})=>setV({...v,[k]:e.target.value.replace(/\D/g,'').slice(0,2)});
