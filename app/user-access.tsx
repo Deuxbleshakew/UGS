@@ -4,6 +4,7 @@ import {Copy, Plus, ShieldCheck, Users} from 'lucide-react';
 import {api, type AppState} from './ui';
 import type {AccountAccessRow} from '@/lib/account-access';
 import ViewerAccess from './viewer-access';
+import JoinLinkPanel from './join-link-panel';
 
 /** Two-step control: click, give a reason, confirm. Used for disabling an account and removing a member. */
 function Confirmed({label, confirmLabel, prompt, busy, danger = true, onConfirm}: {label: string; confirmLabel: string; prompt: string; busy: boolean; danger?: boolean; onConfirm: (reason: string) => Promise<void>}) {
@@ -20,7 +21,7 @@ function Confirmed({label, confirmLabel, prompt, busy, danger = true, onConfirm}
 
 type AccessResponse = {token: string | null; existingAccount: boolean; username: string};
 
-function UsernameAssignment({entry, busy, onAssign, onDisable, onEnable, onDecide}: {entry: AccountAccessRow; busy: boolean; onAssign: (entry: AccountAccessRow, username: string) => Promise<void>; onDisable: (entry: AccountAccessRow, reason: string) => Promise<void>; onEnable: (entry: AccountAccessRow) => Promise<void>; onDecide: (entry: AccountAccessRow, decision: 'approve' | 'reject') => Promise<void>}) {
+function UsernameAssignment({entry, busy, tournamentId, onAssign, onDisable, onEnable, onDecide, onAdd}: {entry: AccountAccessRow; busy: boolean; tournamentId?: string; onAdd: (entry: AccountAccessRow) => Promise<void>; onAssign: (entry: AccountAccessRow, username: string) => Promise<void>; onDisable: (entry: AccountAccessRow, reason: string) => Promise<void>; onEnable: (entry: AccountAccessRow) => Promise<void>; onDecide: (entry: AccountAccessRow, decision: 'approve' | 'reject') => Promise<void>}) {
   const [username, setUsername] = useState('');
   return <div className="username-account">
     <div><b>{entry.name}{entry.owner ? ' · Owner' : ''}</b><small>{entry.email || 'No email provided'}</small><small>{entry.disabled ? 'Disabled' : entry.status === 'active' ? 'Active account' : 'Pending activation'}{entry.participation === 'no' ? ' · Viewer by choice' : ''}</small>{entry.disabled && entry.disabledReason && <small>Reason: {entry.disabledReason}</small>}</div>
@@ -28,6 +29,9 @@ function UsernameAssignment({entry, busy, onAssign, onDisable, onEnable, onDecid
       <label className="field">Username for {entry.name}<input value={username} onChange={event => setUsername(event.target.value)} required minLength={3} maxLength={24} pattern="[A-Za-z0-9_]{3,24}" autoComplete="off" autoCapitalize="none" spellCheck={false} disabled={busy}/></label>
       <button className="btn secondary" disabled={busy || username.trim().length < 3}>Assign username</button>
     </form>}
+    {tournamentId && entry.accountId && entry.username && !entry.disabled && (entry.tournamentIds?.includes(tournamentId)
+      ? <span className="pot-tag">In this tournament</span>
+      : <button type="button" className="btn primary small" disabled={busy} onClick={() => void onAdd(entry)}><Plus size={14}/> Add to tournament</button>)}
     {entry.accountId && entry.participation === 'pending' && !entry.disabled && <div className="confirm-box"><small>{entry.name} asked to take part in the tournament.</small><div className="confirm-actions"><button type="button" className="btn primary small" disabled={busy} onClick={() => void onDecide(entry, 'approve')}>Approve</button><button type="button" className="btn secondary small" disabled={busy} onClick={() => void onDecide(entry, 'reject')}>Keep as viewer</button></div></div>}
     {entry.accountId && !entry.owner && (entry.disabled
       ? <button type="button" className="btn secondary small" disabled={busy} onClick={() => void onEnable(entry)}>Re-enable account</button>
@@ -37,6 +41,7 @@ function UsernameAssignment({entry, busy, onAssign, onDisable, onEnable, onDecid
 
 export default function UserAccess({state, onRefresh}: {state: AppState | null; onRefresh: () => Promise<unknown>}) {
   const [profile, setProfile] = useState('new'), [name, setName] = useState(''), [username, setUsername] = useState(''), [email, setEmail] = useState('');
+  const [search, setSearch] = useState(''), [notIn, setNotIn] = useState(false);
   const [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [error, setError] = useState('');
   const [activation, setActivation] = useState(''), [activationUsername, setActivationUsername] = useState(''), [copied, setCopied] = useState(false);
   const owner = !!state?.user.isOwner, admin = owner && state?.member?.role === 'admin', creating = profile === 'new';
@@ -89,6 +94,10 @@ export default function UserAccess({state, onRefresh}: {state: AppState | null; 
     await api('accounts/participation', {accountId: entry.accountId, decision});
     return decision === 'approve' ? `${entry.name} can now take part. Give them player access below if they do not have it yet.` : `${entry.name} stays a viewer.`;
   });
+  const addToTournament = (entry: AccountAccessRow) => run(async () => {
+    await api(`tournament/${state?.tournament?.id}/add-account`, {accountId: entry.accountId});
+    return `${entry.name} (@${entry.username}) is now a player in this tournament.`;
+  });
   const removeMember = (id: string, name: string, reason: string) => run(async () => {
     const r = await api<{openMatches: number}>(`tournament/${state?.tournament?.id}/members/remove`, {memberId: id, reason, confirm: true});
     return `${name} was removed from this tournament. ${r.openMatches ? `${r.openMatches} unfinished match${r.openMatches === 1 ? ' is' : 'es are'} left without a signed-in participant; you can still schedule and report ${r.openMatches === 1 ? 'it' : 'them'}.` : 'Their results and history stay.'}`;
@@ -122,10 +131,13 @@ export default function UserAccess({state, onRefresh}: {state: AppState | null; 
       {activation && <div className="activation-access"><label className="field">Private activation link for @{activationUsername} · valid for 72 hours<input readOnly value={activation} onFocus={event => event.target.select()}/></label><button className="btn secondary" onClick={() => void copy()}><Copy size={15}/>{copied ? 'Copied' : 'Copy private link'}</button><p className="fine-print">Share the link and username directly with this player. The app does not send email.</p></div>}
       <h3 className="form-section-title">Accounts & usernames</h3>
       <p className="fine-print">Assign your own username here too. Existing accounts keep their passwords and history. Email sign-in ends for an account when you assign its username. Assigning a pending invitation replaces its old link.</p>
-      <div className="username-accounts">{(state?.accountAccess ?? []).map(entry => <UsernameAssignment key={entry.key} entry={entry} busy={busy} onAssign={assign} onDisable={disable} onEnable={enable} onDecide={decide}/>)}</div>
+      <div className="account-filters"><label className="field">Search accounts<input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Name or username" autoComplete="off"/></label>
+        {state?.tournament && <label className="sq-allswitch"><input type="checkbox" checked={notIn} onChange={event => setNotIn(event.target.checked)}/><span>Only people not in this tournament yet</span></label>}</div>
+      <div className="username-accounts">{(state?.accountAccess ?? []).filter(entry => (!search.trim() || `${entry.name} ${entry.username ?? ''}`.toLowerCase().includes(search.trim().toLowerCase())) && (!notIn || !state?.tournament || !entry.tournamentIds?.includes(state.tournament.id))).map(entry => <UsernameAssignment key={entry.key} entry={entry} busy={busy} tournamentId={state?.tournament?.id} onAdd={addToTournament} onAssign={assign} onDisable={disable} onEnable={enable} onDecide={decide}/>)}</div>
       {!!state?.members?.length && <><h3 className="form-section-title">Selected tournament users</h3><div className="member-list">{state.members.map(member => <div key={member.id}><span className="avatar small">{member.name[0]}</span><span><b>{member.name}</b><small>{member.username ? '@' + member.username : 'Username not assigned'}</small><small>{member.role === 'admin' ? 'Admin · you' : member.role === 'viewer' ? 'Viewer' : 'Player'}</small></span><span className="pot-tag">{member.user_id ? 'Active' : 'Pending'}</span>{member.role !== 'admin' && member.user_id !== state.user.userId && <Confirmed label="Remove" confirmLabel="Remove from tournament" prompt={`Reason for removing ${member.name} from this tournament`} busy={busy} onConfirm={reason => removeMember(member.id, member.name, reason)}/>}</div>)}</div></>}
+      {admin && state?.tournament && <JoinLinkPanel key={'join-' + state.tournament.id} tournamentId={state.tournament.id}/>}
       {admin && state?.tournament && <ViewerAccess key={state.tournament.id} tournamentId={state.tournament.id} onRefresh={onRefresh}/>}
-      <p className="fine-print">No public sign-up. Invited members complete their profile before accessing tournaments. Your owner account retains administration access.</p>
+      <p className="fine-print">There is no open sign-up: new people join only through a private activation link or the join link you switch on above. Invited members complete their profile before accessing tournaments. Your owner account retains administration access.</p>
     </> : <p className="notice">Only the site owner can manage account access.</p>}
   </section>;
 }

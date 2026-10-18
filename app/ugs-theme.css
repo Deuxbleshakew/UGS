@@ -373,3 +373,9 @@ html[data-theme="dark"] .sq-edit{border-color:hsl(222 16% 24%)}
 .sq-allswitch input{width:auto!important;min-height:0!important}
 .sq-playerclub{opacity:.5!important;font-size:.66rem!important}
 @media (max-width:560px){.sq-filters{grid-template-columns:1fr}}
+
+/* join link + account list */
+.join-link-panel{display:grid;gap:10px}
+.join-link-options{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.account-filters{display:grid;gap:8px;margin:8px 0}
+@media (max-width:560px){.join-link-options{grid-template-columns:1fr}}

@@ -5,7 +5,8 @@ import seed from "@/data/draw-config.json";
 import { configSchema, reportSchema, validateMatchReport, warnings, standings, managerRows, playerRows, awards, csv, type Config, type Fixture } from "./domain";
 import { z } from "zod";
 import { ensurePlayers, listPlayers, communityRankings, listPlayoffs, managerPlayer, addPlayer, updatePlayer, deletePlayer, createPlayoff, advancePlayoff, autoAdvancePlayoffs, cancelPlayoff, getClubStars, setClubStars, CompetitionError } from './competition-server';
-import {accountDirectory, assignUsername, authorizePlayer, authorizeViewer, createPlayerUser, AccountAccessError} from './account-access';
+import {accountDirectory, addAccountToTournament, assignUsername, authorizePlayer, authorizeViewer, createPlayerUser, AccountAccessError} from './account-access';
+import {getJoinLink, saveJoinLink} from './join-link';
 import { checkPlayoffReport, fixtureSide } from './competition';
 import {tournamentRole} from './access-policy';
 import {getProfile,saveProfile} from './profile-server';
@@ -295,6 +296,7 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
       }
       if(request.method==="POST")return changeFixture(t,m,user,f,await body(request));
     }
+    if(path[2]==='join-link'&&path.length===3&&request.method==='GET'){admin(m);return json(getJoinLink(tid,user));}
     if(path[2]==='team-playoffs'&&path.length===3&&request.method==='GET')return json(getTeamPlayoff(tid));
     if(path[2]==='squads'&&path.length===3&&request.method==='GET')return json(listSquads(tid,user,{role:m.role,managerId:m.manager_id}));
     if(path[2]==='squads'&&path.length===4&&path[3]==='open'&&request.method==='POST')return json(setSquadsOpen(tid,user,{role:m.role,managerId:m.manager_id},await body(request)));
@@ -311,6 +313,8 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
     if(path[2]==='matchweeks'&&path.length===3)return json(changeMatchweeks(tid,user,data));
     if(path[2]==='schedule'&&path.length===4)return json(scheduleAdmin(tid,user,path[3],data));
     if(path[2]==='users')return json(createPlayerUser(tid,user,data));
+    if(path[2]==='join-link'&&path.length===3)return json(saveJoinLink(tid,user,data));
+    if(path[2]==='add-account'&&path.length===3)return json(addAccountToTournament(tid,user,data));
     if(path[2]==='viewers')return json(authorizeViewer(tid,user,data));
     if(path[2]==='players'&&path.length===3)return json(addPlayer(tid,user,data));
     if(path[2]==='players'&&path.length===4&&path[3]==='update')return json(updatePlayer(tid,user,data));

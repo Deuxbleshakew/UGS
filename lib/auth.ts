@@ -5,6 +5,7 @@ import { digest,hashPassword,verifyPassword } from '@/scripts/account-crypto.mjs
 import { z } from 'zod';
 import {usernameSchema,AccountAccessError} from './account-access';
 import {PASSWORD_RULE,passwordProblem} from './password-rules';
+import {joinWithLink} from './join-link';
 
 export type CurrentUser={userId:string;displayName:string;email:string;username:string|null;isOwner:boolean};
 type Account={id:string;email:string;name:string;password_hash:string;owner:number;username:string|null};
@@ -115,6 +116,18 @@ export async function authentication(request:Request,action:string){
       if(error instanceof Error&&/UNIQUE constraint/.test(error.message))return reply({error:'This account was already activated or linked. Ask your organizer for help.'},409);
       throw error;
     }
+    await issueSession(accountId);return reply({ok:true});
+  }
+  if(action==='join'){
+    const parsed=z.object({token:z.string().regex(/^[a-f0-9]{64}$/),name:z.string().trim().min(1).max(80),username:usernameSchema,password:z.string().max(200)}).safeParse(data);
+    if(!parsed.success)return reply({error:'Enter your name, a username (3–24 letters, numbers or underscores) and a password.'},400);
+    const weak=passwordProblem(parsed.data.password);
+    if(weak)return reply({error:weak},400);
+    if(!allowAttempt('join:'+digest(parsed.data.token)))return reply({error:'Too many attempts. Please wait 15 minutes.'},429);
+    const password=await hashPassword(parsed.data.password);
+    let accountId:string;
+    try{accountId=joinWithLink({token:parsed.data.token,name:parsed.data.name,username:parsed.data.username,passwordHash:password});}
+    catch(error){if(error instanceof AccountAccessError)return reply({error:error.message},error.status);throw error;}
     await issueSession(accountId);return reply({ok:true});
   }
   return reply({error:'Unknown sign-in action.'},404);

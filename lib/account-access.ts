@@ -48,19 +48,21 @@ function singlePlayer(members: Member[]): string | null {
   return ids[0] ?? null;
 }
 
-export type AccountAccessRow = {key: string; accountId: string | null; memberId: string | null; playerId: string | null; name: string; email: string; username: string | null; owner: boolean; status: 'active' | 'pending'; disabled?: boolean; disabledReason?: string | null; participation?: 'unanswered' | 'yes' | 'no' | 'pending'};
+export type AccountAccessRow = {key: string; accountId: string | null; memberId: string | null; playerId: string | null; name: string; email: string; username: string | null; owner: boolean; status: 'active' | 'pending'; disabled?: boolean; disabledReason?: string | null; participation?: 'unanswered' | 'yes' | 'no' | 'pending'; tournamentIds?: string[]};
 export function accountDirectory(actor: Actor): AccountAccessRow[] {
   requireOwner(actor);
   const active = rows<{id: string; name: string; email: string; owner: number; username: string | null; player_id: string | null; disabled_reason: string | null; disabled_at: string | null; participation: 'unanswered' | 'yes' | 'no' | 'pending'}>(
     `SELECT a.id,a.name,a.email,a.owner,u.username,u.player_id,s.reason AS disabled_reason,s.disabled_at,CASE WHEN p.account_id IS NULL THEN 'unanswered' WHEN p.wants=0 THEN 'no' WHEN p.status='pending' THEN 'pending' ELSE 'yes' END AS participation FROM accounts a LEFT JOIN account_usernames u ON u.account_id=a.id LEFT JOIN account_status s ON s.account_id=a.id LEFT JOIN account_participation p ON p.account_id=a.id ORDER BY a.owner DESC,a.name,a.id`);
   const pending = rows<Member>('SELECT m.* FROM members m JOIN tournaments t ON t.id=m.tournament_id WHERE t.owner_id=? AND m.user_id IS NULL AND NOT EXISTS(SELECT 1 FROM accounts a WHERE m.email<>\'\' AND a.email=m.email) ORDER BY m.name,m.id', actor.userId);
-  const result: AccountAccessRow[] = active.map(a => ({key: 'account:' + a.id, accountId: a.id, memberId: null, playerId: a.player_id, name: a.name, email: a.email, username: a.username, owner: a.owner === 1, status: 'active', disabled: !!a.disabled_at, disabledReason: a.disabled_reason, participation: a.participation}));
+  const memberships = new Map<string, string[]>();
+  for (const row of rows<{user_id: string; tournament_id: string}>('SELECT m.user_id,m.tournament_id FROM members m JOIN tournaments t ON t.id=m.tournament_id WHERE t.owner_id=? AND m.user_id IS NOT NULL', actor.userId)) memberships.set(row.user_id, [...(memberships.get(row.user_id) ?? []), row.tournament_id]);
+  const result: AccountAccessRow[] = active.map(a => ({key: 'account:' + a.id, accountId: a.id, memberId: null, playerId: a.player_id, name: a.name, email: a.email, username: a.username, owner: a.owner === 1, status: 'active', disabled: !!a.disabled_at, disabledReason: a.disabled_reason, participation: a.participation, tournamentIds: memberships.get(a.id) ?? []}));
   const seen = new Set<string>();
   for (const m of pending) {
     const key = m.username ? 'username:' + m.username : 'email:' + m.email;
     if (seen.has(key)) continue;
     seen.add(key);
-    result.push({key, accountId: null, memberId: m.id, playerId: m.player_id, name: m.name, email: m.email, username: m.username, owner: false, status: 'pending'});
+    result.push({key, accountId: null, memberId: m.id, playerId: m.player_id, name: m.name, email: m.email, username: m.username, owner: false, status: 'pending', tournamentIds: [(m as Member & {tournament_id?: string}).tournament_id ?? '']});
   }
   return result;
 }
@@ -182,5 +184,38 @@ export function createPlayerUser(tid: string, actor: Actor, input: unknown) {
     const playerId = randomUUID();
     db().prepare('INSERT INTO community_players(id,owner_id,name,created_at) VALUES(?,?,?,?)').run(playerId, actor.userId, data.name, new Date().toISOString());
     return grant(tid, actor, {...data, playerId});
+  });
+}
+
+/** Puts an existing platform account into this tournament as a player: no new link or password needed. */
+export function addAccountToTournament(tid: string, actor: Actor, input: unknown) {
+  const data = z.object({accountId: z.string().min(1)}).parse(input);
+  return atomic(() => {
+    requireOwner(actor);
+    const tournament = one<{locked_at: string | null}>('SELECT locked_at FROM tournaments WHERE id=? AND owner_id=?', tid, actor.userId);
+    if (!tournament) fail('Tournament not found.', 404);
+    if (tournament.locked_at) fail('Unlock tournament awards before adding a player.');
+    const account = one<{id: string; name: string; email: string; owner: number}>('SELECT id,name,email,owner FROM accounts WHERE id=?', data.accountId);
+    if (!account) fail('Account not found.', 404);
+    if (one('SELECT status FROM account_status WHERE account_id=?', account.id)) fail('This account is disabled. Re-enable it first.', 409);
+    const reservation = one<Reservation>('SELECT * FROM account_usernames WHERE account_id=?', account.id);
+    if (!reservation) fail('Assign this account a username first.', 409);
+    if (one('SELECT id FROM members WHERE tournament_id=? AND user_id=?', tid, account.id)) fail('This account is already in this tournament.', 409);
+    let playerId = reservation.player_id && one('SELECT id FROM community_players WHERE id=? AND owner_id=?', reservation.player_id, actor.userId) ? reservation.player_id : null;
+    if (!playerId) playerId = one<{player_id: string}>('SELECT m.player_id FROM members m JOIN community_players p ON p.id=m.player_id WHERE m.user_id=? AND p.owner_id=? LIMIT 1', account.id, actor.userId)?.player_id ?? null;
+    if (!playerId) {
+      if (one('SELECT id FROM community_players WHERE owner_id=? AND name=? COLLATE NOCASE', actor.userId, account.name)) fail('A player named ' + account.name + ' already exists. Link that player to this account from the player list instead.', 409);
+      playerId = randomUUID();
+      db().prepare('INSERT INTO community_players(id,owner_id,name,created_at) VALUES(?,?,?,?)').run(playerId, actor.userId, account.name, new Date().toISOString());
+    }
+    if (!reservation.player_id) db().prepare('UPDATE account_usernames SET player_id=? WHERE username=? AND player_id IS NULL').run(playerId, reservation.username);
+    db().prepare('UPDATE community_players SET in_tournament=1 WHERE id=?').run(playerId);
+    const linked = one<{manager_id: string}>('SELECT manager_id FROM player_links WHERE tournament_id=? AND player_id=?', tid, playerId);
+    db().prepare("INSERT INTO members(id,tournament_id,user_id,email,name,role,manager_id,player_id,username) VALUES(?,?,?,?,?,'manager',?,?,?)")
+      .run(randomUUID(), tid, account.id, one('SELECT id FROM members WHERE tournament_id=? AND email=? AND email<>\'\'', tid, account.email) ? '' : account.email, account.name, linked?.manager_id ?? null, playerId, reservation.username);
+    if (!account.owner && !one('SELECT account_id FROM account_participation WHERE account_id=?', account.id)) db().prepare("INSERT INTO account_participation(account_id,wants,status,answered_at) VALUES(?,1,'active',?)").run(account.id, new Date().toISOString());
+    else approveByGrant(db(), actor.userId, account.id);
+    record(actor, reservation.username, 'add-account-to-tournament', account.id);
+    return {ok: true, username: reservation.username, name: account.name};
   });
 }
