@@ -30,6 +30,7 @@ export default function TeamPlayoffs({state}:{state:AppState|null}){
     {error&&<p className="inline-error" role="alert">{error}</p>}
     {!p&&<section className="tp-card">
       <header className="tp-hero"><div><span className="eyebrow">COMMUNITY VOTE</span><h2>Team playoff</h2><p>{owner?'The final vote order is filled in. Top teams go straight through; the rest are paired best against worst and played home and away.':'The organizer has not created the playoff yet.'}</p></div><Trophy size={30}/></header>
+      {!owner&&<div className="tp-preview"><h3>Community vote order</h3><p className="fine-print">Top teams go straight through. The playoff is drawn once the organizer creates it.</p><ol className="tp-order">{VOTED_TEAMS.map((t,i)=><li key={t.team}><span>{i+1}</span><TeamMark name={t.team}/><b>{t.team}</b><small>{t.votes}</small></li>)}</ol></div>}
       {owner&&<>
         <div className="tp-form"><label>Name<input value={name} maxLength={100} onChange={e=>setName(e.target.value)}/></label>
         <label>Direct qualifiers<input type="number" min={0} max={VOTED_TEAMS.length-2} value={direct} onChange={e=>setDirect(Math.max(0,Math.floor(Number(e.target.value)||0)))}/></label>

@@ -4,6 +4,7 @@ import { database } from '@/scripts/local-store.mjs';
 import { digest,hashPassword,verifyPassword } from '@/scripts/account-crypto.mjs';
 import { z } from 'zod';
 import {usernameSchema,AccountAccessError} from './account-access';
+import {PASSWORD_RULE,passwordProblem} from './password-rules';
 
 export type CurrentUser={userId:string;displayName:string;email:string;username:string|null;isOwner:boolean};
 type Account={id:string;email:string;name:string;password_hash:string;owner:number;username:string|null};
@@ -74,8 +75,10 @@ export async function authentication(request:Request,action:string){
     await issueSession(account.id);return reply({ok:true});
   }
   if(action==='activate'){
-    const parsed=z.object({token:z.string().regex(/^[a-f0-9]{64}$/),password:z.string().min(12).max(200)}).safeParse(data);
-    if(!parsed.success)return reply({error:'Use a valid invitation and a password of 12–200 characters.'},400);
+    const parsed=z.object({token:z.string().regex(/^[a-f0-9]{64}$/),password:z.string().max(200)}).safeParse(data);
+    if(!parsed.success)return reply({error:'Use a valid invitation and a password of 8–200 characters.'},400);
+    const weak=passwordProblem(parsed.data.password);
+    if(weak)return reply({error:weak},400);
     const hash=digest(parsed.data.token);
     if(!allowAttempt('activation:'+hash))return reply({error:'Too many attempts. Please wait 15 minutes.'},429);
     const db=database();
@@ -117,12 +120,13 @@ export async function authentication(request:Request,action:string){
   return reply({error:'Unknown sign-in action.'},404);
 }
 
-const passwordSchema=z.object({current:z.string().min(1).max(200),next:z.string().min(12,'Use a new password of 12–200 characters.').max(200,'Use a new password of 12–200 characters.')});
+const passwordSchema=z.object({current:z.string().min(1).max(200),next:z.string().max(200,PASSWORD_RULE)});
 /** Change the signed-in user's own password. Needs the current password, is rate limited, ends every other session. */
 export async function changePassword(user:CurrentUser,input:unknown){
   const parsed=passwordSchema.safeParse(input);
   if(!parsed.success)throw new AccountAccessError(parsed.error.issues[0]?.message??'Check the password fields.',400);
   const {current,next}=parsed.data,db=database();
+  const weak=passwordProblem(next);if(weak)throw new AccountAccessError(weak,400);
   if(!allowAttempt('password:'+user.userId))throw new AccountAccessError('Too many attempts. Please wait 15 minutes.',429);
   const row=db.prepare('SELECT password_hash FROM accounts WHERE id=?').get(user.userId) as {password_hash:string}|undefined;
   if(!row||!await verifyPassword(current,row.password_hash))throw new AccountAccessError('Your current password is incorrect.',403);
