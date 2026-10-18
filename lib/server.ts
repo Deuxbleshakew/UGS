@@ -21,6 +21,7 @@ import {listSquads,saveSquad,deleteSquad,setSquadsOpen} from './squads';
 import {listTiquicia,changeTiquicia} from './tiquicia';
 import {createTeamPlayoff,recordTeamTie,simulateTeamPlayoff,cancelTeamPlayoff,getTeamPlayoff} from './team-playoffs';
 import {answerParticipation,decideParticipation,isViewerByChoice} from './participation';
+import {deleteTournament,TournamentDeletionError} from './tournament-deletion';
 
 type Member={id:string;tournament_id:string;user_id:string|null;email:string;username:string|null;name:string;role:string;manager_id:string|null;player_id:string|null};
 type Tournament={id:string;name:string;owner_id:string;config:string;created_at:string;awards:string|null;locked_at:string|null;revision:number};
@@ -224,6 +225,13 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
     }
     const tid=path[1];if(path[0]!=="tournament"||!tid)fail("Endpoint not found.",404);
     const m=await membership(user,tid),t=await query("SELECT * FROM tournaments WHERE id=?",tid).first<Tournament>();if(!t)fail("Tournament not found.",404);
+    if(path.length===3&&path[2]==='delete'){
+      if(request.method!=='POST')fail('Method not allowed.',405);
+      admin(m);
+      if(!user.isOwner||t.owner_id!==user.userId)fail('Only the owner can delete this tournament.',403);
+      const input=z.object({name:z.string().min(1).max(200)}).parse(await body(request));
+      return json(await deleteTournament(user.userId,tid,input.name));
+    }
     ensurePlayers(t.owner_id);
     Object.assign(m,await membership(user,tid));
     const c=configSchema.parse(JSON.parse(t.config));
@@ -401,7 +409,7 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
     fail("Endpoint not found.",404);
   }catch(error){
     if(error instanceof Error&&error.message.startsWith('Matchweek'))return json({error:error.message},409);
-    if(error instanceof CompetitionError||error instanceof AccountAccessError)return json({error:error.message},error.status);
+    if(error instanceof CompetitionError||error instanceof AccountAccessError||error instanceof TournamentDeletionError)return json({error:error.message},error.status);
     if(error instanceof HttpError)return json({error:error.message},error.status);
     if(error instanceof z.ZodError)return json({error:error.issues.slice(0,3).map(i=>`${i.path.join(".")}: ${i.message}`).join(" · ")},400);
     if(error instanceof Error&&(/UNIQUE constraint/.test(error.message)))return json({error:"That fixture or membership already exists."},409);

@@ -1,6 +1,6 @@
 'use client';
 import {useEffect, useRef, useState, type MouseEvent} from 'react';
-import {Activity, AlertCircle, ArrowDownToLine, ArrowRight, BarChart3, BookOpen, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, Clock3, Dices, FileCheck2, Gamepad2, GitBranch, Home, LayoutDashboard, Loader2, LockKeyhole, LogOut, Menu, Plus, Settings2, Shield, ShieldCheck, Trophy, UserRound, Users, X, type LucideIcon} from 'lucide-react';
+import {Activity, AlertCircle, ArrowDownToLine, ArrowRight, BarChart3, BookOpen, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, Clock3, Dices, FileCheck2, Gamepad2, GitBranch, Home, LayoutDashboard, Loader2, LockKeyhole, LogOut, Menu, Plus, Settings2, Shield, ShieldCheck, Trash2, Trophy, UserRound, Users, X, type LucideIcon} from 'lucide-react';
 import {type Config, type Fixture} from '@/lib/domain';
 import initialConfig from '@/data/draw-config.json';
 import {api, Empty, Modal, type AppState} from './ui';
@@ -30,6 +30,7 @@ export default function TournamentApp() {
   const [loading, setLoading] = useState(true), [error, setError] = useState('');
   const [toast, setToast] = useState(''), [mobile, setMobile] = useState(false);
   const [modal, setModal] = useState<string | null>(null), [selected, setSelected] = useState<Fixture | null>(null);
+  const [deletingTournament, setDeletingTournament] = useState<string | null>(null);
   const mainRef = useRef<HTMLElement>(null), menuRef = useRef<HTMLButtonElement>(null);
   const tournament = state?.tournament;
   const config = tournament?.config ?? initialConfig as Config;
@@ -102,6 +103,17 @@ export default function TournamentApp() {
     await refresh(tid ?? tournament?.id);
     setModal(null); setToast('Saved to your tournament workspace.');
   }
+  async function removeTournament(t:{id:string;name:string}) {
+    const confirmation=window.prompt(`Delete “${t.name}” and all its fixtures, reports, playoffs, scheduling history, and screenshots? This cannot be undone. Type the tournament name to confirm:`);
+    if(confirmation===null)return;
+    if(confirmation!==t.name){setError('Tournament name did not match. Nothing was deleted.');return;}
+    setDeletingTournament(t.id);setError('');
+    try{
+      const result=await api<{remainingId:string|null}>(`tournament/${t.id}/delete`,{name:t.name});
+      await refresh(result.remainingId??undefined);
+      setModal(null);setToast(`Deleted ${t.name}. Its players remain in the player list until you delete them separately.`);
+    }catch(e){setError((e as Error).message);}finally{setDeletingTournament(null);}
+  }
   function download(kind: string) {
     if (admin && tournament) window.location.href = `/api/tournament/${tournament.id}/export?kind=${encodeURIComponent(view === 'elo' && kind === 'matches' ? 'elo' : kind)}`;
   }
@@ -163,7 +175,7 @@ export default function TournamentApp() {
       </main>
     </div>
     {toast && <div className="toast" role="status"><CheckCircle2 size={18} />{toast}<button className="icon-btn" aria-label="Dismiss message" onClick={() => setToast('')}><X size={16} /></button></div>}
-    {modal === 'switch' && <Modal title="Your tournaments" subtitle="Choose the workspace you want to open." onClose={close}><div className="modal-body">{state?.tournaments.length ? state.tournaments.map(t => <button className="switch-row" key={t.id} onClick={() => saved(t.id).catch(e => setError(e.message))}><Shield size={21} />{t.name}<ChevronRight size={18} /></button>) : <p className="muted">{owner ? 'No tournaments created yet.' : 'No tournaments have been assigned to your account yet.'}</p>}{owner && <button className="btn secondary full" onClick={() => setModal('create')}><Plus size={17} />New tournament</button>}</div></Modal>}
+    {modal === 'switch' && <Modal title="Your tournaments" subtitle="Choose the workspace you want to open." onClose={close}><div className="modal-body">{error&&<p className="inline-error" role="alert">{error}</p>}{state?.tournaments.length ? state.tournaments.map(t => <div className="tournament-switch-item" key={t.id}><button className="switch-row" disabled={!!deletingTournament} onClick={() => saved(t.id).catch(e => setError(e.message))}><Shield size={21} />{t.name}<ChevronRight size={18} /></button>{owner&&t.role==='admin'&&<button className="btn secondary tournament-delete" type="button" disabled={!!deletingTournament} onClick={()=>void removeTournament(t)} aria-label={`Delete tournament ${t.name}`}><Trash2 size={16}/>Delete</button>}</div>) : <p className="muted">{owner ? 'No tournaments created yet.' : 'No tournaments have been assigned to your account yet.'}</p>}{owner && <button className="btn secondary full" onClick={() => setModal('create')}><Plus size={17} />New tournament</button>}</div></Modal>}
     {modal === 'match' && selected && tournament && state?.member && <MatchReport fixture={selected} config={config} players={state.players} fixtures={fixtures} tournamentId={tournament.id} user={state.user} member={state.member} timezone={state.profile?.data.timezone} matchweeks={state.matchweeks} awardsLocked={!!tournament.locked_at} countries={state.countries} onClose={close} onSaved={() => saved()} />}
     {owner && modal && ['create', 'fixture', 'import', 'awards-lock'].includes(modal) && <WorkspaceDialog type={modal} config={config} tournament={tournament ?? null} onClose={close} onSaved={saved} />}
   </div>;

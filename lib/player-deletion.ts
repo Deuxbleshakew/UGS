@@ -15,14 +15,14 @@ export function deletePlayerRecord(db:DatabaseSync,ownerId:string,playerId:strin
   if(used('SELECT 1 FROM members WHERE player_id=?',playerId))
     throw new PlayerDeletionBlocked('This player is assigned to a tournament member. Remove that assignment first.');
   if(used("SELECT 1 FROM fixtures WHERE home_player_id=? OR away_player_id=? OR (kind='player' AND (home=? OR away=?))",playerId,playerId,playerId,playerId))
-    throw new PlayerDeletionBlocked('This player appears in match history. Their results must be kept.');
+    throw new PlayerDeletionBlocked('This player appears in match history. Delete the old tournament from Your tournaments first, then try again.');
   if(used('SELECT 1 FROM playoff_ties WHERE player_a=? OR player_b=?',playerId,playerId))
-    throw new PlayerDeletionBlocked('This player appears in a playoff tie. Their history must be kept.');
+    throw new PlayerDeletionBlocked('This player appears in a playoff tie. Delete the old tournament from Your tournaments first, then try again.');
   if(used(`SELECT 1 FROM playoffs p WHERE
       EXISTS(SELECT 1 FROM json_each(p.entrants) e WHERE CASE WHEN e.type='object' THEN json_extract(e.value,'$.id') ELSE e.value END=?)
       OR EXISTS(SELECT 1 FROM json_each(p.automatic_qualifiers) e WHERE CASE WHEN e.type='object' THEN json_extract(e.value,'$.id') ELSE e.value END=?)
       OR EXISTS(SELECT 1 FROM json_each(p.qualified) e WHERE CASE WHEN e.type='object' THEN json_extract(e.value,'$.id') ELSE e.value END=?)`,playerId,playerId,playerId))
-    throw new PlayerDeletionBlocked('This player appears in playoff history. Their record must be kept.');
+    throw new PlayerDeletionBlocked('This player appears in playoff history. Delete the old tournament from Your tournaments first, then try again.');
 
   const links=db.prepare(`SELECT l.tournament_id,l.manager_id,t.owner_id,t.locked_at,t.config
     FROM player_links l JOIN tournaments t ON t.id=l.tournament_id WHERE l.player_id=?`).all(playerId) as Link[];
