@@ -22,7 +22,7 @@ const icons: Record<UgsView, LucideIcon> = {
   statistics: Activity, awards: Trophy, elo: Users, friendlies: Gamepad2, history: Clock3,
   tiquicia: Shield, profile: UserRound, admin: ShieldCheck, review: FileCheck2, roster: Users, settings: Settings2,
 };
-const existingViews: readonly UgsView[] = ['overview', 'playoffs', 'teamplayoffs', 'squad', 'fixtures', 'standings', 'clubs', 'statistics', 'awards', 'elo', 'review', 'roster', 'settings'];
+const existingViews: readonly UgsView[] = ['overview', 'playoffs', 'bracket', 'teamplayoffs', 'squad', 'fixtures', 'standings', 'clubs', 'statistics', 'awards', 'elo', 'review', 'roster', 'settings'];
 
 export default function TournamentApp() {
   const [state, setState] = useState<AppState | null>(null);
