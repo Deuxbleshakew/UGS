@@ -35,7 +35,7 @@ export default function TeamPlayoffs({state}:{state:AppState|null}){
         <label>Direct qualifiers<input type="number" min={0} max={VOTED_TEAMS.length-2} value={direct} onChange={e=>setDirect(Math.max(0,Math.floor(Number(e.target.value)||0)))}/></label>
         <button className="btn lime" disabled={busy||!validSize||!name.trim()} onClick={()=>void act('',{name,directCount:direct,entries:VOTED_TEAMS.map(t=>({team:t.team,votes:t.votes}))})}>Create playoff</button></div>
         <p className={validSize?'tp-hint':'inline-error'}>{validSize?`${direct} direct · ${rest} in the playoff (${rest/2} ties) · ${direct+rest/2} teams qualify`:`${rest} teams would be left for the playoff. It needs an even number.`}</p>
-        <ol className="tp-order">{VOTED_TEAMS.map((t,i)=><li key={t.team} className={i<direct?'direct':''}><span>{i+1}</span><b>{t.team}</b><small>{t.votes}</small></li>)}</ol>
+        <ol className="tp-order">{VOTED_TEAMS.map((t,i)=><li key={t.team} className={i<direct?'direct':''}><span>{i+1}</span><TeamMark name={t.team}/><b>{t.team}</b><small>{t.votes}</small></li>)}</ol>
       </>}
     </section>}
     {p&&<>
@@ -53,7 +53,7 @@ export default function TeamPlayoffs({state}:{state:AppState|null}){
       </section>
       <section className="tp-card">
         <div className="tp-title"><span className="eyebrow">STRAIGHT THROUGH</span><h3>Direct qualifiers</h3></div>
-        <div className="tp-direct">{p.entries.filter(e=>e.direct).map(e=><span className="tp-chip" key={e.rank}><i>{e.rank}</i>{e.team}</span>)}</div>
+        <div className="tp-direct">{p.entries.filter(e=>e.direct).map(e=><span className="tp-chip" key={e.rank}><i>{e.rank}</i><TeamMark name={e.team}/>{e.team}</span>)}</div>
       </section>
       <section className="tp-card">
         <div className="tp-title"><span className="eyebrow">HOME AND AWAY</span><h3>Playoff ties</h3></div>
@@ -73,7 +73,7 @@ export default function TeamPlayoffs({state}:{state:AppState|null}){
       </section>
       {done&&<section className="tp-card">
         <div className="tp-title"><span className="eyebrow">RESULT</span><h3>Qualified teams ({p.qualified.length})</h3></div>
-        <ol className="tp-qual">{p.qualified.map((t,i)=><li key={t}><span>{i+1}</span><b>{t}</b><small className={viaPlayoff.has(t)?'via':''}>{viaPlayoff.has(t)?'Playoff winner':'Direct'}</small></li>)}</ol>
+        <ol className="tp-qual">{p.qualified.map((t,i)=><li key={t}><span>{i+1}</span><TeamMark name={t}/><b>{t}</b><small className={viaPlayoff.has(t)?'via':''}>{viaPlayoff.has(t)?'Playoff winner':'Direct'}</small></li>)}</ol>
       </section>}
       {owner&&<section className="tp-card tp-actions">
         {cancelling
