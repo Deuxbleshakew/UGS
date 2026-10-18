@@ -3,7 +3,8 @@ import {useEffect,useRef,useState,type ReactNode,type CSSProperties} from "react
 import {clubBadge} from '@/lib/club-badges';
 import {crestUrl} from '@/lib/asset-teams';
 import {useFootballers,findFootballer,findAnywhere,HEAD_COLS,HEAD_CELL} from '@/lib/footballers';
-import {Shield,ClipboardList,X,ChevronRight} from "lucide-react";
+import {Shield,ClipboardList,X,ChevronRight,Flame} from "lucide-react";
+import type {MatchQuality} from '@/lib/match-quality';
 import {countryName} from '@/lib/countries';
 import {statusNames,type Config,type Fixture,type awards} from "@/lib/domain";
 import {fixtureSide,stageLabel,type CommunityPlayer,type EloRow,type Playoff} from '@/lib/competition';
@@ -57,6 +58,6 @@ export function Modal({title,subtitle,onClose,wide=false,children}:{title:string
   },[]);
   return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose();}}><div ref={box} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title} className={`modal ${wide?"wide":""}`}><header><div><h2>{title}</h2>{subtitle&&<p>{subtitle}</p>}</div><button className="icon-btn" onClick={onClose} aria-label="Close dialog"><X/></button></header>{children}</div></div>;
 }
-export function FixtureList({rows,config,players=[],onOpen,compact=false}:{rows:Fixture[];config:Config;players?:CommunityPlayer[];onOpen:(f:Fixture)=>void;compact?:boolean}){
-  return rows.length?<div className={`fixture-list ${compact?'compact':''}`}>{rows.map(f=>{const home=fixtureSide(f,'home',config,players),away=fixtureSide(f,'away',config,players);return <button key={f.id} className="fixture-row" onClick={()=>onOpen(f)}><div className="match-meta"><span>{stageLabel(f)}</span><small>{fmt(f.scheduled)}</small></div><div className="match-teams"><span><Crest club={home} small/>{home.name}</span><strong className={f.status==='finalized'?'score official':'score'}>{f.report?`${f.report.homeScore} : ${f.report.awayScore}`:'vs'}</strong><span><Crest club={away} small/>{away.name}</span></div><Status status={f.status}/><ChevronRight size={17}/></button>;})}</div>:<Empty title="The fixture list is waiting" description="Import the league draw, create player playoffs, or schedule your first fixture."/>;
+export function FixtureList({rows,config,players=[],onOpen,compact=false,quality}:{rows:Fixture[];config:Config;players?:CommunityPlayer[];onOpen:(f:Fixture)=>void;compact?:boolean;quality?:(f:Fixture)=>MatchQuality|null}){
+  return rows.length?<div className={`fixture-list ${compact?'compact':''}`}>{rows.map(f=>{const home=fixtureSide(f,'home',config,players),away=fixtureSide(f,'away',config,players);return <button key={f.id} className="fixture-row" onClick={()=>onOpen(f)}><div className="match-meta"><span>{stageLabel(f)}</span><small>{fmt(f.scheduled)}</small>{(q=>q&&q.tier!=='standard'?<em className={`mq mq-${q.tier}`} title={`Game quality ${q.score}/100 · ${q.detail}`}>{q.tier==='big'&&<Flame size={12}/>}{q.tier==='big'?'Big match':'Good match'}<small>{q.detail}</small></em>:null)(quality?.(f)??null)}</div><div className="match-teams"><span><Crest club={home} small/>{home.name}</span><strong className={f.status==='finalized'?'score official':'score'}>{f.report?`${f.report.homeScore} : ${f.report.awayScore}`:'vs'}</strong><span><Crest club={away} small/>{away.name}</span></div><Status status={f.status}/><ChevronRight size={17}/></button>;})}</div>:<Empty title="The fixture list is waiting" description="Import the league draw, create player playoffs, or schedule your first fixture."/>;
 }
