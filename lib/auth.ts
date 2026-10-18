@@ -18,8 +18,10 @@ export async function getCurrentUser():Promise<CurrentUser|null>{
 }
 export function sameOrigin(request:Request){
   const origin=request.headers.get('origin');
-  const expected=new URL(process.env.APP_ORIGIN||request.url).origin;
-  return origin===expected;
+  const configured=process.env.APP_ORIGIN;
+  if(process.env.NODE_ENV==='production'&&!configured)return false;
+  try{return !!origin&&origin===new URL(configured||request.url).origin;}
+  catch{return false;}
 }
 function reply(data:unknown,status=200){return Response.json(data,{status,headers:{'Cache-Control':'no-store'}});}
 export async function issueSession(accountId:string){

@@ -135,6 +135,8 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
       return json(answerParticipation(user,await body(request)));
     }
     if(path[0]==='player-photo'&&path.length===2&&request.method==='GET'){
+      const visible=await query('SELECT 1 FROM community_players p JOIN tournaments t ON t.owner_id=p.owner_id JOIN members m ON m.tournament_id=t.id AND m.user_id=? WHERE p.id=? LIMIT 1',user.userId,path[1]).first();
+      if(!visible)fail('No picture.',404);
       const a=getPlayerPhoto(path[1]);if(!a)fail('No picture.',404);
       const etag=`"${a.version}-${a.size}"`,headers={ETag:etag,'Cache-Control':'private, no-cache','X-Content-Type-Options':'nosniff','Cross-Origin-Resource-Policy':'same-origin'};
       if(request.headers.get('if-none-match')===etag)return new Response(null,{status:304,headers});
@@ -142,6 +144,10 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
     }
     if(path[0]==='avatar'){
       if(path.length===2&&request.method==='GET'){
+        if(path[1]!==user.userId){
+          const visible=await query('SELECT 1 FROM members own JOIN members other ON other.tournament_id=own.tournament_id WHERE own.user_id=? AND other.user_id=? LIMIT 1',user.userId,path[1]).first();
+          if(!visible)fail('No picture.',404);
+        }
         const a=getAvatar(path[1]);if(!a)fail('No picture.',404);
         const etag=`"${a.version}-${a.size}"`,headers={ETag:etag,'Cache-Control':'private, no-cache','X-Content-Type-Options':'nosniff','Cross-Origin-Resource-Policy':'same-origin'};
         if(request.headers.get('if-none-match')===etag)return new Response(null,{status:304,headers});
