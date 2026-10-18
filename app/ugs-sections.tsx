@@ -35,7 +35,7 @@ export default function UgsSections({view, state, onNavigate, onDialog}: Props) 
         <p>Union Gaming Society is our community: friends with Costa Rican roots and players from everywhere else, playing together. UCL is where we compete. RB Tiquicia is where we play as one team.</p>
         <div className="ugs-actions"><a className="btn ugs-white-button" href={viewHref('matchroom')}>Enter UCL <ArrowRight size={17} /></a><a className="ugs-hero-link" href={viewHref('tiquicia')}>Meet RB Tiquicia <ArrowRight size={16} /></a></div>
       </div>
-      <div className="ugs-hero-art" aria-hidden="true"><div className="ugs-flag-lines" /><Image src="/brand/ugs-orchid.png" alt="" width={1254} height={1254} unoptimized priority /><span>UNION GAMING</span></div>
+      <div className="ugs-hero-art" aria-hidden="true"><div className="ugs-flag-lines" /><Image src="/brand/ugs-logo.png" alt="" width={512} height={512} unoptimized priority /><span>UNION GAMING</span></div>
     </section>
     <div className="spot-banner spot-duo" aria-hidden="true">{/* eslint-disable-next-line @next/next/no-img-element */}<img src="/brand/spotlight-duo.jpg" alt="" className="" loading="lazy"/><span>Two players. One league.</span></div>
     <NextAction state={state} />
