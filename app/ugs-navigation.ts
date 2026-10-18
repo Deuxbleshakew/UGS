@@ -12,7 +12,7 @@ type ViewDefinition = {
 
 export const ugsViews: Record<UgsView, ViewDefinition> = {
   home: {label: 'Home', path: 'home', description: 'Union Gaming Society', section: 'ugs'},
-  matchroom: {label: 'UCL', path: 'matchroom', description: 'Competitions, players and your place in the community.', section: 'matchroom'},
+  matchroom: {label: 'Competitions', path: 'matchroom', description: 'Club Champions, matches and player rankings in one place.', section: 'matchroom'},
   overview: {label: 'Overview', path: 'matchroom/club-champions', description: 'Your selected tournament, from the draw to the final result.', section: 'matchroom'},
   guide: {label: 'Rules & Guide', path: 'matchroom/club-champions/guide', description: 'Competition guidance and published rules.', section: 'matchroom'},
   playoffs: {label: 'Qualification', path: 'matchroom/club-champions/qualification', description: 'Elo-seeded home-and-away playoffs and direct qualification.', section: 'matchroom'},

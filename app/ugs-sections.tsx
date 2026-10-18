@@ -20,37 +20,38 @@ const plannedCopy: Partial<Record<UgsView, {title: string; description: string}>
 
 export default function UgsSections({view, state, onNavigate, onDialog}: Props) {
   if (view === 'guide') return <RulesGuide state={state} />;
-  if (view === 'history') return state?.member?.role === 'admin' ? <HistoryView state={state} /> : <section className="panel ugs-planned-page"><h2>History is for organizers</h2><p>This page is only available to the admin account.</p><a className="btn primary" href={viewHref('matchroom')}>Back to UCL <ArrowRight size={16} /></a></section>;
+  if (view === 'history') return state?.member?.role === 'admin' ? <HistoryView state={state} /> : <section className="panel ugs-planned-page"><h2>History is for organizers</h2><p>This page is only available to the admin account.</p><a className="btn primary" href={viewHref('matchroom')}>Back to competitions <ArrowRight size={16} /></a></section>;
   const planned = plannedCopy[view];
   if (planned) return <section className="panel ugs-planned-page">
     <span className="ugs-planned-label">Planned · not available yet</span>
     <h2>{planned.title}</h2><p>{planned.description}</p>
-    <a className="btn primary" href={viewHref(view === 'profile' ? 'home' : 'matchroom')}>Back to {view === 'profile' ? 'UGS Home' : 'UCL'} <ArrowRight size={16} /></a>
+    <a className="btn primary" href={viewHref(view === 'profile' ? 'home' : 'matchroom')}>Back to {view === 'profile' ? 'UGS Home' : 'competitions'} <ArrowRight size={16} /></a>
   </section>;
 
   if (view === 'home') return <>
     <section className="ugs-hero">
       <div className="ugs-hero-copy"><div className="eyebrow">UNION GAMING SOCIETY</div>
         <h1>Different players.<br /><span>One Union.</span></h1>
-        <p>Union Gaming Society is our community: friends with Costa Rican roots and players from everywhere else, playing together. UCL is where we compete. RB Tiquicia is where we play as one team.</p>
-        <div className="ugs-actions"><a className="btn ugs-white-button" href={viewHref('matchroom')}>Enter UCL <ArrowRight size={17} /></a><a className="ugs-hero-link" href={viewHref('tiquicia')}>Meet RB Tiquicia <ArrowRight size={16} /></a></div>
+        <p>Union Gaming Society is our community: friends with Costa Rican roots and players from everywhere else, playing together. Club Champions is where we compete. RB Tiquicia is where we play as one team.</p>
+        <div className="ugs-actions"><a className="btn ugs-white-button" href={viewHref(state?.tournament ? 'overview' : 'matchroom')}>Open Club Champions <ArrowRight size={17} /></a><a className="ugs-hero-link" href={viewHref('tiquicia')}>Meet RB Tiquicia <ArrowRight size={16} /></a></div>
       </div>
       <div className="ugs-hero-art" aria-hidden="true"><div className="ugs-flag-lines" /><Image src="/brand/ugs-logo.png" alt="" width={512} height={512} unoptimized priority /><span>UNION GAMING</span></div>
     </section>
-    <div className="spot-banner spot-duo" aria-hidden="true">{/* eslint-disable-next-line @next/next/no-img-element */}<img src="/brand/spotlight-duo.jpg" alt="" className="" loading="lazy"/><span>Two players. One league.</span></div>
     <NextAction state={state} />
+    <div className="spot-banner spot-duo" aria-hidden="true">{/* eslint-disable-next-line @next/next/no-img-element */}<img src="/brand/spotlight-duo.jpg" alt="" className="" loading="lazy"/><span>Two players. One league.</span></div>
     <div className="ugs-section-heading"><div><span className="eyebrow">YOUR COMMUNITY</span><h2>Find your next game.</h2></div><Globe2 size={22} aria-hidden="true" /></div>
     <div className="ugs-feature-grid">
-      <article className="panel ugs-feature-card"><span className="ugs-feature-icon"><Trophy size={25} /></span><span className="eyebrow">COMPETE</span><h2>UCL</h2><p>One community. No easy matches. Follow Club Champions, find your fixtures and see how our players rank.</p><a className="text-btn" href={viewHref('matchroom')}>Open UCL <ArrowRight size={17} /></a></article>
+      <article className="panel ugs-feature-card"><span className="ugs-feature-icon"><Trophy size={25} /></span><span className="eyebrow">COMPETE</span><h2>Club Champions</h2><p>One community. No easy matches. Follow qualification, find your fixtures and see how our players rank.</p><a className="text-btn" href={viewHref(state?.tournament ? 'overview' : 'matchroom')}>Open competition <ArrowRight size={17} /></a></article>
       <article className="panel ugs-feature-card ugs-team-card"><Image src="/brand/rb-tiquicia.png" alt="RB Tiquicia crest" width={640} height={641} unoptimized className="ugs-team-card-crest" /><span className="eyebrow">PLAY TOGETHER</span><h2>RB Tiquicia</h2><p>Raíces ticas. Un solo equipo. Our community’s Pro Clubs team.</p><a className="text-btn" href={viewHref('tiquicia')}>Visit the team <ArrowRight size={17} /></a></article>
     </div>
-    <div className="ugs-community-note"><Gamepad2 size={22} aria-hidden="true" /><p><b>The match ends. The community stays.</b> UGS brings us together, UCL is where we compete, and room is left for more games.</p></div>
+    <div className="ugs-community-note"><Gamepad2 size={22} aria-hidden="true" /><p><b>The match ends. The community stays.</b> UGS brings us together, Club Champions is where we compete, and room is left for more games.</p></div>
   </>;
 
   if (view === 'matchroom') return <>
+    <NextAction state={state} />
     <section className="ugs-competition-banner"><div><span className="eyebrow">A UGS COMPETITION</span><h2>Club Champions</h2><p>Qualification, fixtures, standings and the performances behind every result.</p><a className="btn ugs-white-button" href={viewHref('overview')}>Open competition <ArrowRight size={17} /></a></div><Trophy size={105} strokeWidth={1} aria-hidden="true" /></section>
     <div className="ugs-context-strip"><span>Selected tournament</span><strong>{state?.tournament?.name ?? 'No tournament available'}</strong>{!!state?.tournaments.length && (state.user.isOwner || state.member?.role === 'admin') && <button className="text-btn" onClick={() => onDialog('switch')}>Switch tournament <ArrowRight size={15} /></button>}</div>
-    <div className="ugs-destination-grid"><Destination view="playoffs" title="Qualification" description="Follow the seeded player playoffs and direct places." /><Destination view="fixtures" title="Fixtures & results" description="Open the match workspace to schedule or report a result." /><Destination view="elo" title="Players & Elo" description="See community player rankings and recent form." /><Destination view="standings" title="League table" description="Follow finalized club results in the current tournament." /></div>
+    <div className="ugs-destination-grid"><Destination view="playoffs" title="1 · Qualification" description="See who earns a place in the tournament." /><Destination view="fixtures" title="2 · Fixtures & results" description="Find your match, arrange a time and report the score." /><Destination view="standings" title="3 · League table" description="Follow the official results and league positions." /><Destination view="bracket" title="4 · Knockout" description="Follow the route from league places to the final." /><Destination view="elo" title="Players & Elo" description="See community player rankings and recent form." /></div>
   </>;
 
   if (view === 'tiquicia') return <>
