@@ -4,13 +4,13 @@ import {formatInZone,validTimezone,zonedLocalToUtc,zoneMessages} from '@/lib/tim
 import {api} from './ui';
 import {Avatar} from './avatar-picker';
 
-type Invitation={result?:Result|null;id:string;status:string;proposedAt:string;proposedLocal:string;proposerTimezone:string;message:string|null;version:number;direction:'sent'|'received';myTurn:boolean;proposedByMe:boolean;otherName:string;otherId:string;otherAvatar:number|null};
+type Invitation={logged?:boolean;result?:Result|null;id:string;status:string;proposedAt:string;proposedLocal:string;proposerTimezone:string;message:string|null;version:number;direction:'sent'|'received';myTurn:boolean;proposedByMe:boolean;otherName:string;otherId:string;otherAvatar:number|null};
 type Ev={id:string;invitationId:string;actorName:string;at:string;action:string;reason:string|null;proposedAt:string|null};
 type Side={goals:number;stars:number|null};
 type Result={mine:Side;theirs:Side;by:string;at:string};
-type Data={unavailable?:{name:string;reason:string}[];now:string;me:{eligible:boolean;reason:string|null;timezone:string;maxPending:number};invitations:Invitation[];events:Ev[];directory:{id:string;name:string}[]};
+type Data={unavailable?:{name:string;reason:string}[];now:string;me:{eligible:boolean;reason:string|null;timezone:string;maxPending:number;owner?:boolean};invitations:Invitation[];events:Ev[];directory:{id:string;name:string}[]};
 const statusText:Record<string,string>={pending:'Waiting for an answer',accepted:'Accepted',declined:'Declined',cancelled:'Cancelled',expired:'Expired'};
-const eventText:Record<string,string>={invited:'Invited',countered:'Counter-proposed',accepted:'Accepted',declined:'Declined',cancelled:'Cancelled',expired:'Expired'};
+const eventText:Record<string,string>={logged:'Logged after the fact',invited:'Invited',countered:'Counter-proposed',accepted:'Accepted',declined:'Declined',cancelled:'Cancelled',expired:'Expired'};
 
 const STAR_OPTIONS=Array.from({length:10},(_,i)=>(i+1)/2);
 function ResultBox({inv,busy,onSave}:{inv:Invitation;busy:boolean;onSave:(body:Record<string,unknown>)=>void}){
@@ -29,6 +29,32 @@ function ResultBox({inv,busy,onSave}:{inv:Invitation;busy:boolean;onSave:(body:R
       <button type="button" className="btn secondary" onClick={()=>setOpen(false)}>Cancel</button>
       <p className="fine-print">Score and stars only. It doesn’t change Elo, standings or awards.</p>
     </div>}
+  </div>;
+}
+/** Register a friendly that was already played: no invitation, the score goes in right away. */
+function LogForm({data,timezone,onDone}:{data:Data;timezone?:string;onDone:()=>void}){
+  const owner=!!data.me.owner,[first,setFirst]=useState(''),[opp,setOpp]=useState(''),[when,setWhen]=useState(''),[mine,setMine]=useState(''),[theirs,setTheirs]=useState('');
+  const [ms,setMs]=useState(''),[ts,setTs]=useState(''),[message,setMessage]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');
+  const num=(x:string)=>x.replace(/\D/g,'').slice(0,2),stars=(x:string)=>x===''?null:Number(x);
+  const names=new Map(data.directory.map(p=>[p.id,p.name])),firstName=first?names.get(first)??'Player 1':'You',oppName=opp?names.get(opp)??'Opponent':'Opponent';
+  const starPick=(label:string,v:string,set:(x:string)=>void)=><label className="field">{label}<select value={v} onChange={e=>set(e.target.value)}><option value="">Not set</option>{STAR_OPTIONS.map(o=><option key={o} value={o}>{o} ★</option>)}</select></label>;
+  async function save(){
+    setBusy(true);setError('');
+    try{await api('friendlies',{action:'log',opponentId:opp,asPlayerId:first||undefined,local:when,myGoals:Number(mine),theirGoals:Number(theirs),myStars:stars(ms),theirStars:stars(ts),message});setFirst('');setOpp('');setWhen('');setMine('');setTheirs('');setMs('');setTs('');setMessage('');onDone();}
+    catch(e){setError((e as Error).message);}finally{setBusy(false);}
+  }
+  return <div className="sched-form">
+    {!timezone&&<p className="notice warning">Set your timezone in My Profile first. The date you enter is read in your profile timezone.</p>}
+    {owner&&<label className="field">First player <small>Organizer only. Leave as you to log your own game.</small><select value={first} onChange={e=>{setFirst(e.target.value);setOpp('');}}><option value="">You</option>{data.directory.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>}
+    <label className="field">{owner&&first?'Second player':'Played against'}<select value={opp} onChange={e=>setOpp(e.target.value)}><option value="">Choose a player</option>{data.directory.filter(p=>p.id!==first).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+    <label className="field">When it was played <small>{timezone||'no timezone saved'} · local time</small><input type="datetime-local" value={when} onChange={e=>setWhen(e.target.value)}/></label>
+    <label className="field">{firstName==='You'?'Your goals':`${firstName}’s goals`}<input inputMode="numeric" maxLength={2} value={mine} onChange={e=>setMine(num(e.target.value))}/></label>
+    <label className="field">{oppName}’s goals<input inputMode="numeric" maxLength={2} value={theirs} onChange={e=>setTheirs(num(e.target.value))}/></label>
+    {starPick(firstName==='You'?'Your team stars':`${firstName}’s team stars`,ms,setMs)}{starPick(`${oppName}’s team stars`,ts,setTs)}
+    <label className="field">Note <small>Optional</small><input maxLength={500} value={message} onChange={e=>setMessage(e.target.value)}/></label>
+    {error&&<p className="inline-error" role="alert">{error}</p>}
+    <button type="button" className="btn primary" disabled={busy||!opp||!when||!timezone||mine===''||theirs===''} onClick={()=>void save()}>{busy?'Saving…':'Save played friendly'}</button>
+    <p className="fine-print">For a game that is already over. It shows in both players’ history, never touches Elo, standings or awards, and either player can correct the score later.</p>
   </div>;
 }
 export default function Friendlies({timezone}:{timezone?:string}){
@@ -58,7 +84,7 @@ export default function Friendlies({timezone}:{timezone?:string}){
   const card=(i:Invitation)=>{
     const events=data.events.filter(e=>e.invitationId===i.id);
     return <div className="sched-card" key={i.id}>
-      <p className="friendly-head"><Avatar id={i.otherId} name={i.otherName} version={i.otherAvatar} size={32}/><span><b>{i.direction==='sent'?`You invited ${i.otherName}`:`${i.otherName} invited you`}</b> · {statusText[i.status]??i.status}</span></p>
+      <p className="friendly-head"><Avatar id={i.otherId} name={i.otherName} version={i.otherAvatar} size={32}/><span><b>{i.logged?(i.proposedByMe?`Played with ${i.otherName}`:`${i.otherName} logged a game with you`):i.direction==='sent'?`You invited ${i.otherName}`:`${i.otherName} invited you`}</b> · {i.logged?'Logged after the fact':statusText[i.status]??i.status}</span></p>
       <p>{formatInZone(i.proposedAt,zone)} <span className="fine-print">({formatInZone(i.proposedAt,'UTC')})</span></p>
       {i.proposerTimezone!==zone&&<p className="fine-print">Entered as {i.proposedLocal.replace('T',' ')} {i.proposerTimezone}.</p>}
       {i.message&&<p className="fine-print">“{i.message}”</p>}
@@ -87,6 +113,7 @@ export default function Friendlies({timezone}:{timezone?:string}){
         {timeForm('Send invitation',()=>void send({action:'invite',inviteeId:who,local:when,message}),!who)}
         <p className="fine-print">Up to {data.me.maxPending} invitations can be waiting at once. Only you and the invited player can see an invitation.</p>
       </details>
+      <details className="schedule-editor"><summary>Log a game you already played</summary><LogForm data={data} timezone={timezone} onDone={()=>void load()}/></details>
       {waiting.length>0&&<><h3>Needs your answer</h3>{waiting.map(card)}</>}
       <h3>Upcoming and waiting</h3>
       {active.filter(i=>!i.myTurn).length?active.filter(i=>!i.myTurn).map(card):<p className="fine-print">No upcoming friendlies.</p>}
