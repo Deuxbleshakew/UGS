@@ -10,7 +10,8 @@ function Tie({a,b,note}:{a:Slot;b:Slot;note?:string}){return <div className="kb-
 
 export function KnockoutBracket({config,fixtures,qualified=[]}:{config:Config;fixtures:Fixture[];qualified?:string[]}){
   const table=standings(config,fixtures,'league'),played=table.some(x=>x.played);
-  const field=[...config.clubs.map(c=>c.name),...qualified],slots=Array.from({length:36},(_,i)=>field[i]??'');
+  // Only places 1–24 of the league table go through (1–8 direct, 9–24 to the playoff), so the panel shows those 24 places, filled from the live table.
+  const places=Array.from({length:24},(_,i)=>played?table[i]?.name??'':'');void qualified;
   // Play-off ties pair 9 v 24, 10 v 23 … 16 v 17; winners meet the top eight, seed 1 facing the 16/17 winner.
   const po=Array.from({length:8},(_,i)=>({a:seeded(table,9+i,played),b:seeded(table,24-i,played)}));
   const r16=Array.from({length:8},(_,i)=>({a:seeded(table,i+1,played),b:tbd('TBD')}));
@@ -20,7 +21,7 @@ export function KnockoutBracket({config,fixtures,qualified=[]}:{config:Config;fi
     <section className="panel kb-hero"><span className="eyebrow">KNOCKOUT PHASE</span><h2>The road to the final</h2>
       <p>Places 1–8 go straight into the round of 16. Places 9–24 play off for the other eight spots.{played?' The bracket follows the live league table.':' Every slot stays blank until the league table is defined.'}</p>
       <p className="kb-note">This is a projection from the league table. Pairings follow the standard seeded pattern (9 v 24, 10 v 23 …), and later rounds fill in as results become official.</p></section>
-    <section className="panel kb-field"><h3>Teams in the field · {field.length} of 36 confirmed</h3><div className="kb-field-grid">{slots.map((n,i)=><span key={i} className={`kb-field-team${n?'':' tbd'}`}>{n?<Crest club={{id:n,name:n}} small/>:<span className="tbd-shield" aria-hidden="true">?</span>}<b>{n||'TBD'}</b></span>)}</div></section>
+    <section className="panel kb-field"><h3>Qualified for the knockout phase · {places.filter(Boolean).length} of 24 places</h3><p className="muted kb-field-sub">Places 1–8 go to the round of 16 · places 9–24 go to the playoff. Filled from the league table.</p><div className="kb-field-grid">{places.map((n,i)=><span key={i} className={`kb-field-team${n?'':' tbd'}${i<8?' direct':''}`}><i className="kb-field-pos">{i+1}</i>{n?<Crest club={{id:n,name:n}} small/>:<span className="tbd-shield" aria-hidden="true">?</span>}<b>{n||'TBD'}</b></span>)}</div></section>
     <div className="kb-scroll"><div className="kb-cols">
       <div className="kb-col"><h3>Playoff · places 9–24</h3>{po.map((t,i)=><Tie key={i} a={t.a} b={t.b} note={`Playoff ${i+1}`}/>)}</div>
       <div className="kb-col"><h3>Round of 16</h3>{r16.map((t,i)=><Tie key={i} a={t.a} b={t.b} note={`R16 ${i+1}`}/>)}</div>
