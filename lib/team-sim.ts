@@ -34,3 +34,25 @@ export function pairRanks(firstPlayoffRank:number,lastRank:number){
   for(let hi=firstPlayoffRank,lo=lastRank,p=1;hi<lo;hi++,lo--,p++)pairs.push({position:p,high:hi,low:lo});
   return pairs;
 }
+
+// This season's owner-selected ties. Preserve the vote order and all other ties.
+export function pairRequestedClubQualifiers(firstPlayoffRank:number,teams:string[]){
+  const pairs=pairRanks(firstPlayoffRank,teams.length);
+  const requested=[
+    {position:3,teams:['FC Porto','Monaco']},
+    {position:4,teams:['Marseille','Young Boys']},
+    {position:5,teams:['AC Milan','Viktoria Plzeň']},
+    {position:8,teams:['Real Sociedad','PSV Eindhoven']},
+  ];
+  const rank=new Map(teams.map((team,index)=>[team,index+1]));
+  const original=pairs.filter(pair=>requested.some(wanted=>wanted.position===pair.position));
+  const originalRanks=original.flatMap(pair=>[pair.high,pair.low]).sort((a,b)=>a-b);
+  const requestedRanks=requested.flatMap(pair=>pair.teams.map(team=>rank.get(team)??0)).sort((a,b)=>a-b);
+  if(original.length!==requested.length||requestedRanks.some((value,index)=>value<firstPlayoffRank||value!==originalRanks[index]))return pairs;
+  return pairs.map(pair=>{
+    const wanted=requested.find(item=>item.position===pair.position);
+    if(!wanted)return pair;
+    const [a,b]=wanted.teams.map(team=>rank.get(team)!);
+    return {...pair,high:Math.min(a,b),low:Math.max(a,b)};
+  });
+}

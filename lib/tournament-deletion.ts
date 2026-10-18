@@ -33,7 +33,7 @@ export async function deleteTournament(ownerId:string,tournamentId:string,confir
       db.prepare(`DELETE FROM ${table} WHERE tournament_id=?`).run(tournamentId);
     db.prepare('DELETE FROM playoff_ties WHERE playoff_id IN (SELECT id FROM playoffs WHERE tournament_id=?)').run(tournamentId);
     db.prepare('DELETE FROM playoffs WHERE tournament_id=?').run(tournamentId);
-    for(const table of ['saved_playoff_corrections','team_substitution_reviews','playoff_pairing_reviews','team_playoff_entries','team_playoff_ties'])
+    for(const table of ['saved_playoff_corrections','team_substitution_reviews','playoff_pairing_reviews','playoff_pairing_retry_reviews','team_playoff_entries','team_playoff_ties'])
       db.prepare(`DELETE FROM ${table} WHERE playoff_id IN (SELECT id FROM team_playoffs WHERE tournament_id=?)`).run(tournamentId);
     db.prepare('DELETE FROM team_playoffs WHERE tournament_id=?').run(tournamentId);
     for(const table of ['squads','squad_access','club_stars','club_roster_corrections','placeholder_manager_cleanup','player_links','invitations','members'])

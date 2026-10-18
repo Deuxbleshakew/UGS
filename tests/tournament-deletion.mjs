@@ -23,6 +23,7 @@ db.exec("INSERT INTO playoffs(id,tournament_id,name,target,elo_mode,draw_seed,en
 db.exec("INSERT INTO playoff_ties(id,playoff_id,round,position,player_a) VALUES('tie','qualifier',1,1,'retired')");
 db.exec("INSERT INTO team_playoffs(id,tournament_id,name,direct_count,seed,status,created_by,created_at) VALUES('team-draw','old','Team draw',1,'seed','ready','owner','now')");
 db.exec("INSERT INTO team_playoff_entries(playoff_id,rank,team,votes,strength) VALUES('team-draw',1,'A',1,1)");
+db.exec("INSERT INTO playoff_pairing_retry_reviews(playoff_id,previous_ties,outcome,recorded_at) VALUES('team-draw','[]','applied','now')");
 
 assert.equal(db.prepare("SELECT 1 FROM schedule_events WHERE id='event'").get()!=null,true);
 assert.equal(db.prepare("SELECT 1 FROM tournaments WHERE id='old'").get()!=null,true);

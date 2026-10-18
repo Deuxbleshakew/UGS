@@ -150,7 +150,7 @@ export function database() {
       db.prepare('INSERT INTO app_migrations VALUES(?,?,?)').run(file, checksum, new Date().toISOString());
     }
     db.exec('COMMIT');
-    for (const table of ['club_roster_corrections', 'saved_playoff_corrections', 'team_substitution_reviews', 'placeholder_manager_cleanup', 'playoff_pairing_reviews']) {
+    for (const table of ['club_roster_corrections', 'saved_playoff_corrections', 'team_substitution_reviews', 'placeholder_manager_cleanup', 'playoff_pairing_reviews', 'playoff_pairing_retry_reviews']) {
       const outcomes = db.prepare('SELECT outcome, count(*) AS count FROM ' + table + ' GROUP BY outcome').all();
       console.log(table + ': ' + JSON.stringify(outcomes));
     }

@@ -3,7 +3,7 @@ import type {DatabaseSync} from 'node:sqlite';
 import {z} from 'zod';
 import {database} from '@/scripts/local-store.mjs';
 import {AccountAccessError} from './account-access';
-import {pairRanks,simulateTie} from './team-sim';
+import {pairRanks,pairRequestedClubQualifiers,simulateTie} from './team-sim';
 
 // Community team vote -> best-v-worst home-and-away playoff, simulated. Owner-only changes; everyone in the tournament can read it.
 type Actor={userId:string;displayName:string};
@@ -37,7 +37,11 @@ export function createTeamPlayoff(tid:string,actor:Actor,input:unknown){
     const id=randomUUID(),at=nowIso(),seed=randomBytes(12).toString('hex');
     d.prepare("INSERT INTO team_playoffs(id,tournament_id,name,direct_count,seed,status,created_by,created_at) VALUES(?,?,?,?,?,'ready',?,?)").run(id,tid,data.name,data.directCount,seed,actor.userId,at);
     data.entries.forEach((e,i)=>d.prepare('INSERT INTO team_playoff_entries(playoff_id,rank,team,votes,strength) VALUES(?,?,?,?,?)').run(id,i+1,e.team,e.votes,e.strength??Math.max(e.votes,1)));
-    for(const p of pairRanks(data.directCount+1,data.entries.length))d.prepare('INSERT INTO team_playoff_ties(id,playoff_id,position,high_rank,low_rank) VALUES(?,?,?,?,?)').run(randomUUID(),id,p.position,p.high,p.low);
+    const tournament=d.prepare("SELECT json_extract(config,'$.tournamentId') AS format FROM tournaments WHERE id=?").get(tid) as {format:string|null};
+    const pairs=tournament.format==='ucl-fantasy-2026'
+      ?pairRequestedClubQualifiers(data.directCount+1,data.entries.map(e=>e.team))
+      :pairRanks(data.directCount+1,data.entries.length);
+    for(const p of pairs)d.prepare('INSERT INTO team_playoff_ties(id,playoff_id,position,high_rank,low_rank) VALUES(?,?,?,?,?)').run(randomUUID(),id,p.position,p.high,p.low);
     audit(d,tid,actor,'create-team-playoff','Organizer created the team playoff from the final vote order.',{id,teams:data.entries.map(e=>e.team),directCount:data.directCount});
     return {id};
   });
