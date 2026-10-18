@@ -73,11 +73,12 @@ export function communityRankings(ownerId:string){
       events.push({homeStars:hs,awayStars:as,id:f.id,home:f.home_player_id,away:f.away_player_id,score:r.homeScore>r.awayScore?1:r.homeScore<r.awayScore?0:0.5,at:f.finalized_at,order:f.rating_order});
     }
   }
-  // Only real people are ranked: managers that were never claimed by an account are placeholders.
+  // Only activated people are ranked: a manager slot nobody has signed in to (even one with an assigned username or a pending invite) is a placeholder. Anyone with rated results stays listed so history is never hidden.
   const placeholders=new Set(rows<{player_id:string}>(`SELECT l.player_id FROM player_links l JOIN tournaments t ON t.id=l.tournament_id WHERE t.owner_id=?
-    AND NOT EXISTS(SELECT 1 FROM members m WHERE m.player_id=l.player_id AND (m.user_id IS NOT NULL OR m.username IS NOT NULL))
-    AND NOT EXISTS(SELECT 1 FROM members m JOIN player_links l2 ON l2.tournament_id=m.tournament_id AND l2.manager_id=m.manager_id WHERE l2.player_id=l.player_id AND (m.user_id IS NOT NULL OR m.username IS NOT NULL))`,ownerId).map(r=>r.player_id));
-  return eloRankings(listPlayers(ownerId).filter(p=>!placeholders.has(p.id)),events);
+    AND NOT EXISTS(SELECT 1 FROM members m WHERE m.player_id=l.player_id AND m.user_id IS NOT NULL)
+    AND NOT EXISTS(SELECT 1 FROM members m JOIN player_links l2 ON l2.tournament_id=m.tournament_id AND l2.manager_id=m.manager_id WHERE l2.player_id=l.player_id AND m.user_id IS NOT NULL)`,ownerId).map(r=>r.player_id));
+  const rated=new Set(events.flatMap(e=>[e.home,e.away]));
+  return eloRankings(listPlayers(ownerId).filter(p=>!placeholders.has(p.id)||rated.has(p.id)),events);
 }
 
 export function addPlayer(tid:string,user:Actor,input:unknown){

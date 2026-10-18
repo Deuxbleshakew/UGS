@@ -2,7 +2,7 @@
 import {useCallback,useEffect,useState} from 'react';
 import {Trophy,XCircle} from 'lucide-react';
 import {VOTED_TEAMS,DEFAULT_DIRECT} from '@/lib/team-vote-data';
-import {api,Empty} from './ui';
+import {api,Empty,Crest} from './ui';
 import type {AppState} from './ui';
 
 type Entry={rank:number;team:string;votes:number;strength:number;direct:boolean};
@@ -60,7 +60,7 @@ export default function TeamPlayoffs({state}:{state:AppState|null}){
         <div className="tp-ties">{ties.map(t=>{
           const lowWon=t.winner===t.low.team,highWon=t.winner===t.high.team,played=!!t.aggregate;
           const row=(e:Entry,won:boolean,l1:number|undefined,l2:number|undefined,agg:number|undefined,pen:number|undefined)=><div className={`tp-row${won?' won':''}${played&&!won?' lost':''}`}>
-            <span className="tp-seed">{tag(e)}</span><b className="tp-team">{e.team}</b>
+            <span className="tp-seed">{tag(e)}</span><b className="tp-team"><TeamMark name={e.team}/>{e.team}</b>
             <span className="tp-n">{cell(l1)}</span><span className="tp-n">{cell(l2)}</span><span className="tp-n tp-agg">{cell(agg)}{pen!=null&&<sup>({pen})</sup>}</span></div>;
           return <article className="tp-tie" key={t.position}>
             <header><span>Tie {t.position}</span>{t.winner?<b className="tp-win">{t.winner} through</b>:<b className="tp-wait">Awaiting result</b>}</header>
@@ -85,12 +85,13 @@ export default function TeamPlayoffs({state}:{state:AppState|null}){
   </div>;
 }
 
+function TeamMark({name,small=false}:{name:string;small?:boolean}){return <span className={`tp-crest${small?' small':''}`} aria-hidden="true"><Crest club={{id:name,name}}/></span>;}
 function ResultForm({tie,busy,onSave}:{tie:Tie;busy:boolean;onSave:(body:object)=>void}){
   const [v,setV]=useState({l1l:'',l1h:'',l2l:'',l2h:'',pl:'',ph:''});
   const n=(x:string)=>x===''?NaN:Number(x),set=(k:keyof typeof v)=>(e:{target:{value:string}})=>setV({...v,[k]:e.target.value.replace(/\D/g,'').slice(0,2)});
   const all=[v.l1l,v.l1h,v.l2l,v.l2h].every(x=>x!==''),low=n(v.l1l)+n(v.l2l),high=n(v.l1h)+n(v.l2h),level=all&&low===high;
   const ok=all&&(!level||(v.pl!==''&&v.ph!==''&&n(v.pl)!==n(v.ph)));
-  const box=(k:keyof typeof v,label:string)=><label className="tp-score"><span>{label}</span><input type="text" inputMode="numeric" pattern="[0-9]*" maxLength={2} placeholder="–" autoComplete="off" disabled={busy} value={v[k]} onChange={set(k)} aria-label={label}/></label>;
+  const box=(k:keyof typeof v,label:string)=><label className="tp-score"><span><TeamMark name={label.replace(/ pens$/,'')} small/>{label}</span><input type="text" inputMode="numeric" pattern="[0-9]*" maxLength={2} placeholder="–" autoComplete="off" disabled={busy} value={v[k]} onChange={set(k)} aria-label={label}/></label>;
   return <div className="tp-result-form">
     <fieldset className="tp-leg"><legend>Leg 1 <span>Home / Away</span></legend>{box('l1l',tie.low.team)}{box('l1h',tie.high.team)}</fieldset>
     <fieldset className="tp-leg"><legend>Leg 2 <span>Home / Away</span></legend>{box('l2h',tie.high.team)}{box('l2l',tie.low.team)}</fieldset>

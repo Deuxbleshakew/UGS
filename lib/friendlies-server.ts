@@ -82,12 +82,15 @@ function toUtc(local:string,tz:string){
 }
 const local=z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/,'Enter a valid date and time.');
 const note=z.string().trim().max(500).optional();
+/** Same 0.5-5 star scale as club stars; optional because a team may not have a rating. */
+const starValue=z.number().min(0.5).max(5).refine(n=>Number.isInteger(n*2),'Stars go in steps of 0.5.').nullable();
 const actionSchema=z.discriminatedUnion('action',[
   z.object({action:z.literal('invite'),inviteeId:z.string().min(1).max(100),local,message:note}),
   z.object({action:z.literal('accept'),id:z.string(),version:z.number().int()}),
   z.object({action:z.literal('decline'),id:z.string(),version:z.number().int(),message:note}),
   z.object({action:z.literal('counter'),id:z.string(),version:z.number().int(),local,message:note}),
   z.object({action:z.literal('cancel'),id:z.string(),version:z.number().int(),message:note}),
+  z.object({action:z.literal('result'),id:z.string(),myGoals:z.number().int().min(0).max(99),theirGoals:z.number().int().min(0).max(99),myStars:starValue,theirStars:starValue}),
 ]);
 type Late={fail:string;status:number};
 export function friendlyAction(actor:Actor,input:unknown){
@@ -110,7 +113,15 @@ export function friendlyAction(actor:Actor,input:unknown){
     }
     const inv=d.prepare('SELECT * FROM friendly_invitations WHERE id=?').get(data.id) as Inv|undefined;
     if(!inv||(inv.inviter_id!==actor.userId&&inv.invitee_id!==actor.userId))return fail('Invitation not found.',404);
-    if(inv.version!==data.version)fail('This invitation has already changed. Refresh to see the latest.',409);
+    if(data.action==='result'){
+      // A result is just a score and the stars of each team. It never touches Elo, standings or awards. The latest entry wins, so either player can correct a typo.
+      if(inv.status!=='accepted')fail('Only an accepted friendly can have a result.',409);
+      if(new Date(inv.proposed_at).getTime()>Date.now())fail('This friendly has not started yet. Add the result once it has been played.',409);
+      const mine=inv.inviter_id===actor.userId;
+      const body={inviter:{goals:mine?data.myGoals:data.theirGoals,stars:mine?data.myStars:data.theirStars},invitee:{goals:mine?data.theirGoals:data.myGoals,stars:mine?data.theirStars:data.myStars}};
+      event(d,inv.id,who,'result',JSON.stringify(body),inv.proposed_at);return {ok:true};
+    }
+    if((data as {version:number}).version!==inv.version)fail('This invitation has already changed. Refresh to see the latest.',409);
     const other=inv.inviter_id===actor.userId?inv.invitee_id:inv.inviter_id;
     const close=(status:string,action:string,why:string|null)=>{
       d.prepare('UPDATE friendly_invitations SET status=?,turn_id=NULL,version=version+1,updated_at=? WHERE id=?').run(status,nowIso(),inv.id);
@@ -150,9 +161,23 @@ export function getFriendlies(actor:Actor){
   expireStale();const d=db(),me=eligibility(actor.userId);
   const rows=d.prepare('SELECT * FROM friendly_invitations WHERE inviter_id=? OR invitee_id=? ORDER BY created_at DESC').all(actor.userId,actor.userId) as Inv[];
   const name=(id:string)=>eligibility(id).name||'Player';
-  const invitations=rows.map(i=>{const other=i.inviter_id===actor.userId?i.invitee_id:i.inviter_id;return {id:i.id,status:i.status,proposedAt:i.proposed_at,proposedLocal:i.proposed_local,proposerTimezone:i.proposer_timezone,message:i.message,version:i.version,createdAt:i.created_at,updatedAt:i.updated_at,direction:i.inviter_id===actor.userId?'sent':'received',myTurn:i.turn_id===actor.userId,proposedByMe:i.proposed_by===actor.userId,otherName:name(other),otherId:other,otherAvatar:avatarVersion(other)};});
+  const invitationsBase=rows.map(i=>{const other=i.inviter_id===actor.userId?i.invitee_id:i.inviter_id;return {id:i.id,status:i.status,proposedAt:i.proposed_at,proposedLocal:i.proposed_local,proposerTimezone:i.proposer_timezone,message:i.message,version:i.version,createdAt:i.created_at,updatedAt:i.updated_at,direction:i.inviter_id===actor.userId?'sent':'received',myTurn:i.turn_id===actor.userId,proposedByMe:i.proposed_by===actor.userId,otherName:name(other),otherId:other,otherAvatar:avatarVersion(other)};});
   const ids=rows.map(r=>r.id),marks=ids.map(()=>'?').join(',');
-  const events=ids.length?d.prepare(`SELECT id,invitation_id AS invitationId,actor_name AS actorName,at,action,reason,proposed_at AS proposedAt FROM friendly_events WHERE invitation_id IN (${marks}) ORDER BY at,rowid`).all(...ids):[];
+  const events=ids.length?d.prepare(`SELECT id,invitation_id AS invitationId,actor_name AS actorName,at,action,reason,proposed_at AS proposedAt FROM friendly_events WHERE invitation_id IN (${marks}) AND action<>'result' ORDER BY at,rowid`).all(...ids):[];
+  const resultRows=ids.length?d.prepare(`SELECT invitation_id AS id,actor_name AS actorName,at,reason FROM friendly_events WHERE invitation_id IN (${marks}) AND action='result' ORDER BY at,rowid`).all(...ids) as {id:string;actorName:string;at:string;reason:string}[]:[];
+  const results=new Map<string,{inviter:{goals:number;stars:number|null};invitee:{goals:number;stars:number|null};by:string;at:string}>();
+  for(const r of resultRows){try{results.set(r.id,{...JSON.parse(r.reason),by:r.actorName,at:r.at});}catch{/* ignore a malformed row */}}
+  const invitations=invitationsBase.map(i=>{
+    const r=results.get(i.id),mine=rows.find(x=>x.id===i.id)!.inviter_id===actor.userId;
+    return {...i,result:r?{mine:mine?r.inviter:r.invitee,theirs:mine?r.invitee:r.inviter,by:r.by,at:r.at}:null};
+  });
   const directory=me.ok?(d.prepare('SELECT id FROM accounts WHERE id<>?').all(actor.userId) as {id:string}[]).map(a=>({id:a.id,e:eligibility(a.id)})).filter(x=>x.e.ok&&x.e.name).map(x=>({id:x.id,name:x.e.name})).sort((a,b)=>a.name.localeCompare(b.name)):[];
-  return {now:nowIso(),me:{eligible:me.ok,reason:me.reason??null,timezone:me.timezone,maxPending:MAX_PENDING_OUT},invitations,events,directory};
+  // Owner only: explain why someone is missing from the invite list, so an empty dropdown is never a mystery.
+  const isOwner=profileOf(actor.userId)?.a.owner===1;
+  const unavailable=isOwner?(d.prepare('SELECT id FROM accounts WHERE id<>?').all(actor.userId) as {id:string}[]).map(a=>{
+    const e=eligibility(a.id);if(e.ok)return null;
+    const p=profileOf(a.id),missing=p&&e.reason==='Finish your profile first.'?missingProfile(p.data,p.a.username,true):[];
+    return {name:e.name||p?.a.name||'',reason:missing.length?`Profile missing: ${missing.map(m=>m==='Ask the owner to assign your username'?'username (assign it in User Access)':m.toLowerCase()).join(', ')}`:(e.reason??'Not available')};
+  }).filter((x):x is {name:string;reason:string}=>!!x&&!!x.name).sort((a,b)=>a.name.localeCompare(b.name)):[];
+  return {now:nowIso(),me:{eligible:me.ok,reason:me.reason??null,timezone:me.timezone,maxPending:MAX_PENDING_OUT},invitations,events,directory,unavailable};
 }

@@ -4,12 +4,33 @@ import {formatInZone,validTimezone,zonedLocalToUtc,zoneMessages} from '@/lib/tim
 import {api} from './ui';
 import {Avatar} from './avatar-picker';
 
-type Invitation={id:string;status:string;proposedAt:string;proposedLocal:string;proposerTimezone:string;message:string|null;version:number;direction:'sent'|'received';myTurn:boolean;proposedByMe:boolean;otherName:string;otherId:string;otherAvatar:number|null};
+type Invitation={result?:Result|null;id:string;status:string;proposedAt:string;proposedLocal:string;proposerTimezone:string;message:string|null;version:number;direction:'sent'|'received';myTurn:boolean;proposedByMe:boolean;otherName:string;otherId:string;otherAvatar:number|null};
 type Ev={id:string;invitationId:string;actorName:string;at:string;action:string;reason:string|null;proposedAt:string|null};
-type Data={now:string;me:{eligible:boolean;reason:string|null;timezone:string;maxPending:number};invitations:Invitation[];events:Ev[];directory:{id:string;name:string}[]};
+type Side={goals:number;stars:number|null};
+type Result={mine:Side;theirs:Side;by:string;at:string};
+type Data={unavailable?:{name:string;reason:string}[];now:string;me:{eligible:boolean;reason:string|null;timezone:string;maxPending:number};invitations:Invitation[];events:Ev[];directory:{id:string;name:string}[]};
 const statusText:Record<string,string>={pending:'Waiting for an answer',accepted:'Accepted',declined:'Declined',cancelled:'Cancelled',expired:'Expired'};
 const eventText:Record<string,string>={invited:'Invited',countered:'Counter-proposed',accepted:'Accepted',declined:'Declined',cancelled:'Cancelled',expired:'Expired'};
 
+const STAR_OPTIONS=Array.from({length:10},(_,i)=>(i+1)/2);
+function ResultBox({inv,busy,onSave}:{inv:Invitation;busy:boolean;onSave:(body:Record<string,unknown>)=>void}){
+  const r=inv.result,[open,setOpen]=useState(false),[mine,setMine]=useState(String(r?.mine.goals??'')),[theirs,setTheirs]=useState(String(r?.theirs.goals??''));
+  const [ms,setMs]=useState(r?.mine.stars==null?'':String(r.mine.stars)),[ts,setTs]=useState(r?.theirs.stars==null?'':String(r.theirs.stars));
+  const num=(x:string)=>x.replace(/\D/g,'').slice(0,2),stars=(x:string)=>x===''?null:Number(x);
+  const starPick=(label:string,v:string,set:(x:string)=>void)=><label className="field">{label}<select value={v} onChange={e=>set(e.target.value)}><option value="">Not set</option>{STAR_OPTIONS.map(o=><option key={o} value={o}>{o} ★</option>)}</select></label>;
+  const show=(side:Side)=>side.stars==null?'':` (${side.stars} ★)`;
+  return <div className="friendly-result">
+    {r&&<p className="friendly-score"><b>You {r.mine.goals}{show(r.mine)} – {r.theirs.goals}{show(r.theirs)} {inv.otherName}</b> <span className="fine-print">entered by {r.by}</span></p>}
+    {!open?<button type="button" className="btn secondary" onClick={()=>setOpen(true)}>{r?'Correct result':'Add result'}</button>:<div className="sched-form">
+      <label className="field">Your goals<input inputMode="numeric" maxLength={2} value={mine} onChange={e=>setMine(num(e.target.value))}/></label>
+      <label className="field">{inv.otherName}’s goals<input inputMode="numeric" maxLength={2} value={theirs} onChange={e=>setTheirs(num(e.target.value))}/></label>
+      {starPick('Your team stars',ms,setMs)}{starPick(`${inv.otherName}’s team stars`,ts,setTs)}
+      <button type="button" className="btn primary" disabled={busy||mine===''||theirs===''} onClick={()=>{onSave({action:'result',id:inv.id,myGoals:Number(mine),theirGoals:Number(theirs),myStars:stars(ms),theirStars:stars(ts)});setOpen(false);}}>Save result</button>
+      <button type="button" className="btn secondary" onClick={()=>setOpen(false)}>Cancel</button>
+      <p className="fine-print">Score and stars only. It doesn’t change Elo, standings or awards.</p>
+    </div>}
+  </div>;
+}
 export default function Friendlies({timezone}:{timezone?:string}){
   const [data,setData]=useState<Data|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false);
   const [who,setWho]=useState(''),[when,setWhen]=useState(''),[message,setMessage]=useState(''),[counterFor,setCounterFor]=useState<string|null>(null);
@@ -50,16 +71,18 @@ export default function Friendlies({timezone}:{timezone?:string}){
         </>}
         {(i.status==='pending'||i.status==='accepted')&&<button type="button" className="btn secondary" disabled={busy} onClick={()=>void send({action:'cancel',id:i.id,version:i.version})}>Cancel</button>}
       </div>
+      {i.status==='accepted'&&new Date(i.proposedAt).getTime()<=nowMs&&<ResultBox key={i.id+(i.result?.at??'')} inv={i} busy={busy} onSave={body=>void send(body)}/>}
       {counterFor===i.id&&timeForm('Send counter-proposal',()=>void send({action:'counter',id:i.id,version:i.version,local:when,message}))}
       {events.length>0&&<details className="sched-history"><summary>History ({events.length})</summary><ul>{events.map(e=><li key={e.id}><b>{eventText[e.action]??e.action}</b>{e.proposedAt&&<> · {formatInZone(e.proposedAt,zone)}</>} <span className="fine-print">{e.actorName} · {formatInZone(e.at,zone)}{e.reason?` · ${e.reason}`:''}</span></li>)}</ul></details>}
     </div>;
   };
   return <section className="panel friendlies-panel" aria-labelledby="friendlies-heading">
     <h2 id="friendlies-heading" className="visually-hidden">Friendlies</h2>
-    <p className="fine-print">Casual matches between two players. They don’t affect Elo, standings, awards or qualification, and need no result or proof. Times show in {zone}.</p>
+    <p className="fine-print">Casual matches between two players. After you play, add the score and each team’s stars. They don’t affect Elo, standings, awards or qualification, and need no proof. Times show in {zone}.</p>
     {error&&<p className="inline-error" role="alert">{error}</p>}
     {!data.me.eligible?<p className="notice">{data.me.reason??'Friendlies are not available to you yet.'}</p>:<>
       <details className="schedule-editor" open={!data.invitations.length}><summary>Invite a player</summary>
+        {!data.directory.length&&<div className="notice"><p><b>No one is available to invite yet.</b></p>{data.unavailable?.length?<ul>{data.unavailable.map(u=><li key={u.name}><b>{u.name}</b>: {u.reason}</li>)}</ul>:<p className="fine-print">Other players show up here once they have a finished profile (username, platform, timezone and an in-game ID).</p>}</div>}
         <label className="field">Player<select value={who} onChange={e=>setWho(e.target.value)}><option value="">Choose a player</option>{data.directory.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
         {timeForm('Send invitation',()=>void send({action:'invite',inviteeId:who,local:when,message}),!who)}
         <p className="fine-print">Up to {data.me.maxPending} invitations can be waiting at once. Only you and the invited player can see an invitation.</p>
