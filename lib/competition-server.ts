@@ -94,14 +94,14 @@ export function addPlayer(tid:string,user:Actor,input:unknown){
 }
 
 export function deletePlayer(tid:string,user:Actor,input:unknown){
-  const data=z.object({playerId:z.string().min(1),name:z.string().min(1)}).parse(input);
+  const data=z.object({playerId:z.string().min(1),name:z.string().min(1),force:z.boolean().optional()}).parse(input);
   try{return atomic(()=>{
-    const t=unlocked(tid);
+    const t=data.force?tournament(tid):unlocked(tid);
     const player=one<{name:string}>('SELECT name FROM community_players WHERE id=? AND owner_id=?',data.playerId,t.owner_id);
     if(!player)fail('Player not found. Refresh the list.',404);
     if(player.name!==data.name)fail('Player details changed. Refresh the list before deleting.',409);
-    const removed=deletePlayerRecord(db(),t.owner_id,data.playerId);
-    audit(tid,user,'delete-player',removed,null);
+    const removed=deletePlayerRecord(db(),t.owner_id,data.playerId,!!data.force);
+    audit(tid,user,data.force?'force-delete-player':'delete-player',removed,null);
     return {ok:true};
   });}catch(error){
     if(error instanceof PlayerDeletionBlocked)fail(error.message,409);

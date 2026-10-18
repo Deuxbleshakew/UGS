@@ -29,8 +29,14 @@ export function PlayerAdmin({state,onRefresh}:{state:AppState|null;onRefresh:()=
     void run(pid,async()=>{await api(`tournament/${t.id}/player-photo`,{playerId:pid,image:await squareJpeg(file)});if(pick.current)pick.current.value='';});};
   const remove=(pid:string)=>run(pid,()=>api(`tournament/${t.id}/player-photo`,{playerId:pid,image:null}));
   const deletePlayer=(pid:string,playerName:string)=>{
-    if(!window.confirm(`Delete ${playerName} from the player list? Their photo and unused manager slots will also be removed. Players linked to an account, club, or match history cannot be deleted.`))return;
-    void run(pid,()=>api(`tournament/${t.id}/players/delete`,{playerId:pid,name:playerName}));
+    if(!window.confirm(`Delete ${playerName} from the player list? Their photo and unused manager slots will also be removed.`))return;
+    void run(pid,async()=>{
+      try{await api(`tournament/${t.id}/players/delete`,{playerId:pid,name:playerName});}
+      catch(e){
+        if(!window.confirm(`${(e as Error).message}\n\nDelete ${playerName} anyway?\n\nThis removes their login, member assignment, club assignment, playoff spots and ALL their matches in every tournament. It cannot be undone.`))throw e;
+        await api(`tournament/${t.id}/players/delete`,{playerId:pid,name:playerName,force:true});
+      }
+    });
   };
   return <>
     <div className="competition-intro"><div><span className="eyebrow">ADMIN · PLAYERS</span><h2>Players and photos</h2><p>{(state?.players??[]).length} players · Add a player, give them a photo, or delete an unused player.</p></div><Users size={34}/></div>
