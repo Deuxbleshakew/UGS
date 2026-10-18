@@ -42,9 +42,9 @@ export default function Views({view,state,config:c,fixtures:allFixtures,onNaviga
   },[tid]);
   const nameKey=(n:string)=>n.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
   const inTable=new Set(c.clubs.map(cl=>nameKey(cl.name))),extraQualified=voteQualified.filter(t=>!inTable.has(nameKey(t)));
-  // People actually playing: the draw's managers plus every player switched on as "plays in tournament" (placeholders like "Manager 9" never count).
-  const switchedOff=new Set((state?.players??[]).filter(p=>p.in_tournament===0).map(p=>nameKey(p.name)));
-  const playing=new Set([...c.managers.map(m=>m.name),...(state?.players??[]).filter(p=>p.in_tournament!==0).map(p=>p.name)].filter(n=>n&&!/^Manager \d+$/.test(n)).map(nameKey).filter(k=>!switchedOff.has(k)));
+  // The roster's tournament switch is the source of truth. Legacy draw managers
+  // can include the separate admin account and must not inflate this count.
+  const playing=new Set((state?.players??[]).filter(p=>p.in_tournament!==0&&!/^Manager \d+$/.test(p.name)).map(p=>nameKey(p.name)).filter(Boolean));
   const table=standings(c,fs),official=fs.filter(f=>f.status==='finalized'),queue=fs.filter(f=>['pending','confirmed','disputed'].includes(f.status)),admin=state?.member?.role==='admin';
   const club=(id:string)=>c.clubs.find(cl=>cl.id===id),manager=(id?:string)=>c.managers.find(m=>m.id===id)?.name??'Draw pending';
   const awardData=state?.tournament?.awards??awards(c,fs);
