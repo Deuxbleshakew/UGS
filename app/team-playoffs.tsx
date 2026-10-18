@@ -17,7 +17,7 @@ export default function TeamPlayoffs({state}:{state:AppState|null}){
   const [direct,setDirect]=useState(DEFAULT_DIRECT),[name,setName]=useState('Team vote playoff'),[confirmRun,setConfirmRun]=useState(false),[why,setWhy]=useState(''),[cancelling,setCancelling]=useState(false);
   const load=useCallback(async()=>{if(!tid)return;try{setData(await api<Data>(`tournament/${tid}/team-playoffs`));}catch(e){setError((e as Error).message);}},[tid]);
   useEffect(()=>{void load();},[load]);
-  async function act(path:string,body:unknown,after?:()=>void){setBusy(true);setError('');try{await api(`tournament/${tid}/team-playoffs${path}`,body);after?.();await load();}catch(e){setError((e as Error).message);await load();}finally{setBusy(false);}}
+  async function act(path:string,body:unknown,after?:()=>void){setBusy(true);setError('');try{await api(`tournament/${tid}/team-playoffs${path}`,body);after?.();await load();window.dispatchEvent(new Event('team-playoff-updated'));}catch(e){setError((e as Error).message);await load();}finally{setBusy(false);}}
   if(!tid)return <Empty title="Create a tournament first" description="The team vote playoff belongs to a tournament."/>;
   if(!data)return <section className="panel">{error?<p className="inline-error" role="alert">{error}</p>:<p className="fine-print">Loading…</p>}</section>;
   const p=data.playoff;

@@ -125,6 +125,7 @@ export function getTeamPlayoff(tid:string){
     penalties:t.pens_low==null?null:{high:t.pens_high!,low:t.pens_low},
     winner:t.winner_rank?byRank.get(t.winner_rank)!.team:null,
   }));
-  const qualified=p.status==='simulated'?[...entries.filter(e=>e.direct).map(e=>e.team),...ties.map(t=>t.winner!)]:[];
+  // Direct qualifiers and completed tie winners are confirmed immediately.
+  const qualified=[...entries.filter(e=>e.direct).map(e=>e.team),...ties.flatMap(t=>t.winner?[t.winner]:[])];
   return {playoff:{id:p.id,name:p.name,status:p.status,version:p.version,directCount:p.direct_count,seed:p.status==='simulated'?p.seed:null,simulatedAt:p.simulated_at,entries,ties,qualified},cancelled};
 }
