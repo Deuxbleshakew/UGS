@@ -39,7 +39,8 @@ export function PlayerAdmin({state,onRefresh}:{state:AppState|null;onRefresh:()=
     void run(pid,async()=>{
       try{await api(`tournament/${t.id}/players/delete`,{playerId:pid,name:playerName});}
       catch(e){
-        if(!window.confirm(`${(e as Error).message}\n\nDelete ${playerName} anyway?\n\nThis removes their login, member assignment, club assignment, playoff spots and ALL their matches in every tournament. It cannot be undone.`))throw e;
+        if((e as Error&{status?:number}).status!==409||(e as Error).message.includes('not found'))throw e;
+        if(!window.confirm(`${(e as Error).message}\n\nDelete ${playerName} anyway?\n\nThis removes their player assignment, club assignment, playoff spots and ALL their matches in every tournament. Their login and membership remain. It cannot be undone.`))throw e;
         await api(`tournament/${t.id}/players/delete`,{playerId:pid,name:playerName,force:true});
       }
     });

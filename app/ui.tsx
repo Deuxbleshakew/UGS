@@ -42,7 +42,7 @@ export const number=(n:number)=>Number.isInteger(n)?String(n):n.toFixed(2);
 export async function api<T=Record<string,unknown>>(path:string,data?:unknown,method="POST"):Promise<T>{
   const response=await fetch('/api/'+path,data===undefined?{cache:"no-store"}:{method,headers:data instanceof FormData?{}:{"Content-Type":"application/json"},body:data instanceof FormData?data:JSON.stringify(data)});
   let result;try{result=await response.json();}catch{throw new Error("The server is unavailable. Please reload and try again.");}
-  if(!response.ok)throw new Error(String((result as {error?:string})?.error??"The request could not be completed."));return result as T;
+  if(!response.ok){const error=new Error(String((result as {error?:string})?.error??"The request could not be completed.")) as Error&{status:number};error.status=response.status;throw error;}return result as T;
 }
 export function Modal({title,subtitle,onClose,wide=false,children}:{title:string;subtitle?:string;onClose:()=>void;wide?:boolean;children:ReactNode}){
   const box=useRef<HTMLDivElement>(null),close=useRef(onClose);close.current=onClose;

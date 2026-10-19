@@ -33,5 +33,23 @@ assert.throws(()=>deletePlayerRecord(db,'owner','assigned-player'),PlayerDeletio
 assert.throws(()=>deletePlayerRecord(db,'owner','played'),PlayerDeletionBlocked);
 assert.equal(db.prepare("SELECT 1 FROM community_players WHERE id='assigned-player'").get()!=null,true);
 assert.equal(db.prepare("SELECT 1 FROM fixtures WHERE home_player_id='played'").get()!=null,true);
+
+// A linked player with fixtures and playoff history requires the explicit owner override.
+db.exec("INSERT INTO community_players(id,owner_id,name,created_at) VALUES('linked','owner','Linked','now')");
+db.exec("INSERT INTO accounts(id,email,name,password_hash,owner,created_at) VALUES('linked-account','','Linked','test',0,'now')");
+db.exec("INSERT INTO account_usernames(username,account_id,player_id,created_at) VALUES('linked_user','linked-account','linked','now')");
+db.exec("INSERT INTO members(id,tournament_id,user_id,email,name,role,manager_id,player_id,username) VALUES('linked-member','current','linked-account','','Linked','manager',NULL,'linked','linked_user')");
+db.exec("INSERT INTO fixtures(id,tournament_id,home,away,stage,matchday,kind,home_player_id) VALUES('linked-fixture','current','linked','played','playoff',1,'player','linked')");
+db.exec("INSERT INTO playoffs(id,tournament_id,name,target,elo_mode,draw_seed,entrants,qualified,automatic_qualifiers,created_at) VALUES('linked-playoff','current','Qualifiers',1,'match','seed','[\"linked\",\"played\"]','[\"linked\"]','[\"linked\"]','now')");
+db.exec("INSERT INTO playoff_ties(id,playoff_id,round,position,player_a,player_b) VALUES('linked-tie','linked-playoff',1,1,'linked','played')");
+db.exec('BEGIN');
+assert.equal(deletePlayerRecord(db,'owner','linked',true).player.name,'Linked');
+db.exec('COMMIT');
+assert.equal(db.prepare("SELECT 1 FROM community_players WHERE id='linked'").get(),undefined);
+assert.equal(db.prepare("SELECT 1 FROM fixtures WHERE id='linked-fixture'").get(),undefined);
+assert.equal(db.prepare("SELECT player_id FROM account_usernames WHERE username='linked_user'").get().player_id,null);
+assert.equal(db.prepare("SELECT player_id FROM members WHERE id='linked-member'").get().player_id,null);
+assert.equal(db.prepare("SELECT username FROM members WHERE id='linked-member'").get().username,'linked_user');
+assert.deepEqual(JSON.parse(db.prepare("SELECT qualified FROM playoffs WHERE id='linked-playoff'").get().qualified),[]);
 assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
-console.log('PASS: unused players and photo removed; assigned players and match history protected.');
+console.log('PASS: unused players removed, ordinary deletion protects history, and owner override clears linked records.');

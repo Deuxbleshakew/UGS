@@ -11,7 +11,10 @@ const entryId=(e:unknown)=>e&&typeof e==='object'?(e as {id?:string}).id:e;
 
 /** Owner override: detach the player from everything that normally blocks deletion. Caller owns the transaction. */
 function clearPlayerReferences(db:DatabaseSync,playerId:string){
-  db.prepare('DELETE FROM account_usernames WHERE player_id=?').run(playerId);
+  // Deleting a player must not delete the associated user login. Members and
+  // invitations refer to the username, so keep that identity and unlink only
+  // the player record.
+  db.prepare('UPDATE account_usernames SET player_id=NULL WHERE player_id=?').run(playerId);
   db.prepare('UPDATE members SET player_id=NULL WHERE player_id=?').run(playerId);
   const fx=db.prepare("SELECT id,tournament_id FROM fixtures WHERE home_player_id=? OR away_player_id=? OR (kind='player' AND (home=? OR away=?))").all(playerId,playerId,playerId,playerId) as {id:string;tournament_id:string}[];
   const contexts=[...new Set(fx.map(f=>f.tournament_id))];
