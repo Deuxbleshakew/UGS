@@ -6,6 +6,7 @@ import { z } from 'zod';
 import {usernameSchema,AccountAccessError} from './account-access';
 import {PASSWORD_RULE,passwordProblem} from './password-rules';
 import {joinWithLink} from './join-link';
+import {AccountRecoveryError,completePasswordReset} from './account-recovery';
 
 export type CurrentUser={userId:string;displayName:string;email:string;username:string|null;isOwner:boolean};
 type Account={id:string;email:string;name:string;password_hash:string;owner:number;username:string|null};
@@ -132,6 +133,15 @@ export async function authentication(request:Request,action:string){
     catch(error){if(error instanceof AccountAccessError)return reply({error:error.message},error.status);throw error;}
     await issueSession(accountId);return reply({ok:true});
   }
+  if(action==='reset-password'){
+    const parsed=z.object({token:z.string().regex(/^[a-f0-9]{64}$/),password:z.string().max(200)}).safeParse(data);
+    if(!parsed.success)return reply({error:'Open the complete reset link and enter a new password.'},400);
+    const weak=passwordProblem(parsed.data.password);if(weak)return reply({error:weak},400);
+    if(!allowAttempt('reset:'+digest(parsed.data.token)))return reply({error:'Too many attempts. Please wait 15 minutes.'},429);
+    const passwordHash=await hashPassword(parsed.data.password);
+    try{return reply(completePasswordReset(database(),parsed.data.token,passwordHash));}
+    catch(error){if(error instanceof AccountRecoveryError)return reply({error:error.message},error.status);throw error;}
+  }
   return reply({error:'Unknown sign-in action.'},404);
 }
 
@@ -150,6 +160,7 @@ export async function changePassword(user:CurrentUser,input:unknown){
   db.exec('BEGIN IMMEDIATE');
   try{
     db.prepare('UPDATE accounts SET password_hash=? WHERE id=?').run(hash,user.userId);
+    db.prepare('DELETE FROM password_reset_tokens WHERE account_id=?').run(user.userId);
     const ended=Number(db.prepare('DELETE FROM sessions WHERE account_id=? AND token_hash<>?').run(user.userId,keep).changes);
     db.prepare('INSERT INTO account_access_audit(id,actor_id,target_account_id,username,action,created_at) VALUES(?,?,?,?,?,?)').run(randomUUID(),user.userId,user.userId,user.username??'','change-password',new Date().toISOString());
     db.exec('COMMIT');return {ok:true,otherSessionsEnded:ended};

@@ -77,7 +77,7 @@ export function assignUsername(actor: Actor, input: unknown) {
       if (!account) fail('Account not found.', 404);
       const current = one<Reservation>('SELECT * FROM account_usernames WHERE account_id=?', account.id);
       if (current) {
-        if (current.username !== data.username) fail('Assigned usernames are fixed in this milestone.', 409);
+        if (current.username !== data.username) fail('Use Change username in Users & access for this account.', 409);
         return {existingAccount: true, token: null, username: current.username};
       }
       const members = rows<Member>('SELECT * FROM members WHERE user_id=? OR (user_id IS NULL AND username IS NULL AND email<>\'\' AND email=?)', account.id, account.email);

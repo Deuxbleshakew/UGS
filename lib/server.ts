@@ -1,4 +1,5 @@
 import { store, proofStore } from "./storage";
+import {database} from '@/scripts/local-store.mjs';
 import {getSettings as getScheduleSettings} from './scheduling-server';
 import { getCurrentUser, sameOrigin, changePassword, type CurrentUser } from "./auth";
 import seed from "@/data/draw-config.json";
@@ -6,6 +7,7 @@ import { configSchema, reportSchema, validateMatchReport, warnings, standings, m
 import { z } from "zod";
 import { ensurePlayers, listPlayers, communityRankings, listPlayoffs, managerPlayer, addPlayer, updatePlayer, deletePlayer, createPlayoff, advancePlayoff, autoAdvancePlayoffs, cancelPlayoff, getClubStars, setClubStars, CompetitionError } from './competition-server';
 import {accountDirectory, addAccountToTournament, assignUsername, authorizePlayer, authorizeViewer, createPlayerUser, AccountAccessError} from './account-access';
+import {AccountRecoveryError,issuePasswordReset,renameAccountUsername} from './account-recovery';
 import {getJoinLink, saveJoinLink} from './join-link';
 import { checkPlayoffReport, fixtureSide } from './competition';
 import {tournamentRole} from './access-policy';
@@ -201,6 +203,11 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
     if(path[0]==='accounts'&&path[1]==='username'&&path.length===2&&request.method==='POST'){
       if(!user.isOwner)fail('Only the owner can assign usernames.',403);
       return json(assignUsername(user,await body(request)));
+    }
+    if(path[0]==='accounts'&&path.length===2&&request.method==='POST'&&['rename-username','reset-password'].includes(path[1])){
+      const input=z.object({accountId:z.string().min(1),username:z.string().optional()}).parse(await body(request));
+      if(path[1]==='rename-username')return json(renameAccountUsername(database(),user.userId,input.accountId,input.username??''));
+      return json(issuePasswordReset(database(),user.userId,input.accountId));
     }
     if(path[0]==="create"&&request.method==="POST"){
       if(!user.isOwner)fail("Only the organizer can create tournaments.",403);
@@ -420,7 +427,7 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
     fail("Endpoint not found.",404);
   }catch(error){
     if(error instanceof Error&&error.message.startsWith('Matchweek'))return json({error:error.message},409);
-    if(error instanceof CompetitionError||error instanceof AccountAccessError||error instanceof TournamentDeletionError)return json({error:error.message},error.status);
+    if(error instanceof CompetitionError||error instanceof AccountAccessError||error instanceof AccountRecoveryError||error instanceof TournamentDeletionError)return json({error:error.message},error.status);
     if(error instanceof HttpError)return json({error:error.message},error.status);
     if(error instanceof z.ZodError)return json({error:error.issues.slice(0,3).map(i=>`${i.path.join(".")}: ${i.message}`).join(" · ")},400);
     if(error instanceof Error&&(/UNIQUE constraint/.test(error.message)))return json({error:"That fixture or membership already exists."},409);

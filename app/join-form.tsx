@@ -34,7 +34,7 @@ export default function JoinForm() {
       <form onSubmit={submit}>
         <label className="field">Your name<input type="text" autoComplete="name" required maxLength={80} value={name} onChange={e => setName(e.target.value)} disabled={busy}/></label>
         <label className="field">Username<input type="text" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} required minLength={3} maxLength={24} pattern="[A-Za-z0-9_]{3,24}" value={username} onChange={e => setUsername(e.target.value)} disabled={busy} aria-describedby="join-username-help"/></label>
-        <p id="join-username-help" className="fine-print">3–24 letters, numbers or underscores. You sign in with it, and it can't be changed later.</p>
+        <p id="join-username-help" className="fine-print">3–24 letters, numbers or underscores. You sign in with it; your organizer can change it later if needed.</p>
         <label className="field">Create password<PasswordInput autoComplete="new-password" required minLength={8} maxLength={200} value={password} onChange={e => setPassword(e.target.value)}/></label>
         <label className="field">Confirm password<PasswordInput autoComplete="new-password" required minLength={8} maxLength={200} value={confirm} onChange={e => setConfirm(e.target.value)}/></label>
         <p className="fine-print">Use at least 8 characters.</p>
