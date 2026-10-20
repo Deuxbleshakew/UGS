@@ -109,7 +109,7 @@ export default function Friendlies({timezone}:{timezone?:string}){
   const card=(i:Invitation)=>{
     const events=data.events.filter(e=>e.invitationId===i.id);
     return <div className="sched-card" key={i.id}>
-      <p className="friendly-head"><Avatar id={i.otherId} name={i.otherName} version={i.otherAvatar} size={32}/><span><b>{i.organizerView?`You arranged ${i.firstName} vs ${i.otherName}`:i.organizerProposal?`Organizer arranged your friendly with ${i.otherName}`:i.logged?(i.proposedByMe?`Played with ${i.otherName}`:`${i.otherName} logged a game with you`):i.direction==='sent'?`You invited ${i.otherName}`:`${i.otherName} invited you`}</b> · {i.logged?'Logged after the fact':statusText[i.status]??i.status}</span></p>
+      <p className="friendly-head"><Avatar id={i.otherId} name={i.otherName} version={i.otherAvatar} size={32}/><span><b>{i.organizerView?`${i.firstName} vs ${i.otherName}`:i.organizerProposal?`Organizer arranged your friendly with ${i.otherName}`:i.logged?(i.proposedByMe?`Played with ${i.otherName}`:`${i.otherName} logged a game with you`):i.direction==='sent'?`You invited ${i.otherName}`:`${i.otherName} invited you`}</b> · {i.status==='cancelled'?'Cancelled':i.logged?'Logged after the fact':statusText[i.status]??i.status}</span></p>
       <p>{formatInZone(i.proposedAt,zone)} <span className="fine-print">({formatInZone(i.proposedAt,'UTC')})</span></p>
       {i.proposerTimezone!==zone&&<p className="fine-print">Entered as {i.proposedLocal.replace('T',' ')} {i.proposerTimezone}.</p>}
       {i.message&&<p className="fine-print">“{i.message}”</p>}
@@ -121,16 +121,21 @@ export default function Friendlies({timezone}:{timezone?:string}){
           <button type="button" className="btn secondary" disabled={busy} onClick={()=>void send({action:'decline',id:i.id,version:i.version})}>Decline</button>
           <button type="button" className="btn secondary" disabled={busy} onClick={()=>{setCounterFor(counterFor===i.id?null:i.id);setWhen('');setMessage('');}}>{counterFor===i.id?'Close counter':'Counter-propose'}</button>
         </>}
-        {(i.status==='pending'||i.status==='accepted')&&<button type="button" className="btn secondary" disabled={busy} onClick={()=>void send({action:'cancel',id:i.id,version:i.version})}>Cancel</button>}
+        {(i.status==='pending'||(i.status==='accepted'&&(data.me.owner||new Date(i.proposedAt).getTime()>nowMs)))&&<button type="button" className="btn secondary" disabled={busy} onClick={()=>{
+          const played=i.status==='accepted'&&new Date(i.proposedAt).getTime()<=nowMs;
+          if(played){const reason=window.prompt(`Cancel the played friendly ${i.firstName} vs ${i.otherName}? Its score will stop counting toward Elo. Enter a reason:`);if(!reason||reason.trim().length<3)return;void send({action:'cancel',id:i.id,version:i.version,message:reason.trim()});}
+          else if(window.confirm(`Cancel this friendly between ${i.firstName} and ${i.otherName}?`))void send({action:'cancel',id:i.id,version:i.version});
+        }}>{i.status==='accepted'&&new Date(i.proposedAt).getTime()<=nowMs?'Void played match':'Cancel'}</button>}
       </div>
       {i.status==='accepted'&&new Date(i.proposedAt).getTime()<=nowMs&&<ResultBox key={i.id+(i.result?.at??'')} inv={i} busy={busy} onSave={body=>void send(body)}/>}
+      {i.status==='cancelled'&&i.result&&<p className="fine-print">Voided result: {i.organizerView?i.firstName:'You'} {i.result.mine.goals}–{i.result.theirs.goals} {i.otherName}. It no longer counts toward Elo.</p>}
       {counterFor===i.id&&timeForm('Send counter-proposal',()=>void send({action:'counter',id:i.id,version:i.version,local:when,message}))}
       {events.length>0&&<details className="sched-history"><summary>History ({events.length})</summary><ul>{events.map(e=><li key={e.id}><b>{eventText[e.action]??e.action}</b>{e.proposedAt&&<> · {formatInZone(e.proposedAt,zone)}</>} <span className="fine-print">{e.actorName} · {formatInZone(e.at,zone)}{e.reason?` · ${e.reason}`:''}</span></li>)}</ul></details>}
     </div>;
   };
   return <section className="panel friendlies-panel" aria-labelledby="friendlies-heading">
     <h2 id="friendlies-heading" className="visually-hidden">Friendlies</h2>
-    <p className="fine-print">Casual matches between two players. After you play, add the score and each team’s stars. Once both players agree on the score it counts for Elo at half weight. No standings, awards or proof. Times show in {zone}.</p>
+    <p className="fine-print">Casual matches between two players. After you play, add the score and each team’s stars. Once both players agree on the score it counts for Elo at half weight. No standings, awards or proof. Times show in {zone}.{data.me.owner?' As organizer, you can see every friendly and void a played match with a reason.':''}</p>
     {error&&<p className="inline-error" role="alert">{error}</p>}
     {!data.me.eligible?<p className="notice">{data.me.reason??'Friendlies are not available to you yet.'}</p>:<>
       <details className="schedule-editor" open={!data.invitations.length}><summary>Invite a player</summary>

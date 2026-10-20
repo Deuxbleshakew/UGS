@@ -12,7 +12,7 @@ import {evaluateFriendlies} from './friendly-elo';
 import {zonedLocalToUtc,zoneMessages} from './timezone';
 
 // Friendly invitations. A friendly is not a fixture: it has no standings, awards or proof. Once both players agree on the score it counts for Elo at half weight (see friendly-elo.ts).
-// Only the two participants can see or act on an invitation. Eligible = a participant (or the owner) with a finished profile.
+// Players see their own friendlies. The owner can review and cancel any friendly.
 type Actor={userId:string;displayName:string};
 type Inv={id:string;inviter_id:string;invitee_id:string;pair_key:string;status:string;proposed_at:string;proposed_local:string;proposer_timezone:string;proposed_by:string;turn_id:string|null;message:string|null;created_at:string;updated_at:string;version:number};
 /** Safety limit on outgoing pending invitations per person (abuse protection, not a league rule). */
@@ -151,7 +151,8 @@ export function friendlyAction(actor:Actor,input:unknown){
     const inv=d.prepare('SELECT * FROM friendly_invitations WHERE id=?').get(data.id) as Inv|undefined;
     const organizer=inv?d.prepare('SELECT created_by,first_response FROM friendly_organizer_proposals WHERE invitation_id=?').get(inv.id) as {created_by:string;first_response:number}|undefined:undefined;
     const participant=!!inv&&(inv.inviter_id===actor.userId||inv.invitee_id===actor.userId);
-    if(!inv||(!participant&&!(data.action==='cancel'&&organizer?.created_by===actor.userId)))return fail('Invitation not found.',404);
+    const isOwner=profileOf(actor.userId)?.a.owner===1;
+    if(!inv||(!participant&&!(data.action==='cancel'&&isOwner)))return fail('Invitation not found.',404);
     if(data.action==='result'){
       // A result is a score and the stars of each team. It counts for Elo once the other player enters or confirms the same score. The latest entry wins, so either player can correct a typo.
       if(inv.status!=='accepted')fail('Only an accepted friendly can have a result.',409);
@@ -169,7 +170,10 @@ export function friendlyAction(actor:Actor,input:unknown){
     if(data.action==='cancel'){
       if(inv.status==='pending'){close('cancelled','cancelled',data.message||null);return {ok:true};}
       if(inv.status!=='accepted')fail('This invitation is already closed.',409);
-      if(new Date(inv.proposed_at).getTime()<=Date.now())fail('That friendly has already started, so it cannot be cancelled.',409);
+      if(new Date(inv.proposed_at).getTime()<=Date.now()){
+        if(!isOwner)fail('Only the organizer can cancel a played friendly.',403);
+        if((data.message||'').trim().length<3)fail('Give a reason of at least 3 characters for cancelling a played friendly.');
+      }
       close('cancelled','cancelled',data.message||null);return {ok:true};
     }
     if(inv.status!=='pending')fail('This invitation is already closed.',409);
@@ -202,10 +206,13 @@ export function friendlyAction(actor:Actor,input:unknown){
   if('fail' in out)fail(out.fail,out.status);
   return out;
 }
-/** Everything the Friendlies page needs: the caller's own invitations, their history, and the people they can invite. */
+/** Players see their own friendlies; the owner sees the complete friendly history. */
 export function getFriendlies(actor:Actor){
   expireStale();const d=db(),me=eligibility(actor.userId);
-  const rows=d.prepare('SELECT * FROM friendly_invitations WHERE inviter_id=? OR invitee_id=? OR id IN (SELECT invitation_id FROM friendly_organizer_proposals WHERE created_by=?) ORDER BY created_at DESC').all(actor.userId,actor.userId,actor.userId) as Inv[];
+  const isOwner=profileOf(actor.userId)?.a.owner===1;
+  const rows=(isOwner
+    ?d.prepare('SELECT * FROM friendly_invitations ORDER BY created_at DESC').all()
+    :d.prepare('SELECT * FROM friendly_invitations WHERE inviter_id=? OR invitee_id=? ORDER BY created_at DESC').all(actor.userId,actor.userId)) as Inv[];
   const name=(id:string)=>eligibility(id).name||'Player';
   const organized=rows.length?d.prepare(`SELECT invitation_id,first_response FROM friendly_organizer_proposals WHERE invitation_id IN (${rows.map(()=>'?').join(',')})`).all(...rows.map(r=>r.id)) as {invitation_id:string;first_response:number}[]:[];
   const organizedMap=new Map(organized.map(r=>[r.invitation_id,r.first_response]));
@@ -224,7 +231,6 @@ export function getFriendlies(actor:Actor){
   });
   const directory=me.ok?(d.prepare('SELECT id FROM accounts WHERE id<>?').all(actor.userId) as {id:string}[]).map(a=>({id:a.id,e:eligibility(a.id)})).filter(x=>x.e.ok&&x.e.name).map(x=>({id:x.id,name:x.e.name})).sort((a,b)=>a.name.localeCompare(b.name)):[];
   // Owner only: explain why someone is missing from the invite list, so an empty dropdown is never a mystery.
-  const isOwner=profileOf(actor.userId)?.a.owner===1;
   const unavailable=isOwner?(d.prepare('SELECT id FROM accounts WHERE id<>?').all(actor.userId) as {id:string}[]).map(a=>{
     const e=eligibility(a.id);if(e.ok)return null;
     const p=profileOf(a.id),missing=p&&e.reason==='Finish your profile first.'?missingProfile(p.data,p.a.username,true):[];

@@ -47,9 +47,27 @@ try{
   const cancelId=friendlyAction(actor('owner'),{action:'organize',firstId:'a',secondId:'c',local:cancelLocal}).id;
   friendlyAction(actor('owner'),{action:'cancel',id:cancelId,version:1});
   assert.equal(getFriendlies(actor('c')).invitations.find(i=>i.id===cancelId).status,'cancelled');
+  db.prepare('UPDATE friendly_elo_start SET started_at=? WHERE id=1').run(new Date(Date.now()-3*86400000).toISOString());
+  const playedLocal=new Date(Date.now()-86400000).toISOString().slice(0,16);
+  const playedId=friendlyAction(actor('owner'),{action:'log',asPlayerId:'a',opponentId:'b',local:playedLocal,myGoals:2,theirGoals:1,myStars:4,theirStars:3}).id;
+  assert.equal(getFriendlies(actor('owner')).invitations.find(i=>i.id===playedId).elo?.state,'counts');
+  assert.equal(getFriendlies(actor('c')).invitations.some(i=>i.id===playedId),false);
+  assert.throws(()=>friendlyAction(actor('a'),{action:'cancel',id:playedId,version:1,message:'Incorrect game'}),/Only the organizer/);
+  assert.throws(()=>friendlyAction(actor('owner'),{action:'cancel',id:playedId,version:1,message:'No'}),/reason of at least 3/);
+  friendlyAction(actor('owner'),{action:'cancel',id:playedId,version:1,message:'Duplicate match'});
+  const voided=getFriendlies(actor('owner')).invitations.find(i=>i.id===playedId);
+  assert.equal(voided.status,'cancelled');
+  assert.equal(voided.elo,null);
+  assert.ok(voided.result);
+  assert.equal(getFriendlies(actor('a')).invitations.find(i=>i.id===playedId).status,'cancelled');
+  assert.throws(()=>friendlyAction(actor('owner'),{action:'cancel',id:playedId,version:2,message:'Again'}),/already closed/);
+  const otherPlayed=friendlyAction(actor('a'),{action:'log',opponentId:'c',local:playedLocal,myGoals:0,theirGoals:0,myStars:null,theirStars:null}).id;
+  assert.ok(getFriendlies(actor('owner')).invitations.some(i=>i.id===otherPlayed));
+  friendlyAction(actor('owner'),{action:'cancel',id:otherPlayed,version:1,message:'Entered by mistake'});
+  assert.equal(getFriendlies(actor('c')).invitations.find(i=>i.id===otherPlayed).status,'cancelled');
   assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
   db.close();
-  console.log('PASS: organizer proposals require both players, support counter-proposals and cancellation, and stay private.');
+  console.log('PASS: organizer proposals require both players; owner sees all friendlies and can void played results without changing the audit trail.');
 }finally{
   if(!dir.startsWith(root+path.sep))throw new Error('Test directory escaped the H: project.');
   fs.rmSync(dir,{recursive:true,force:true});
