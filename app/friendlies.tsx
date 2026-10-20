@@ -5,7 +5,7 @@ import {api} from './ui';
 import {Avatar} from './avatar-picker';
 import {viewHref} from './ugs-navigation';
 
-type Invitation={elo?:{state:'counts'|'waiting'|'earlier'|'none';canConfirm:boolean}|null;logged?:boolean;ratingIssue?:string|null;result?:Result|null;id:string;status:string;proposedAt:string;proposedLocal:string;proposerTimezone:string;message:string|null;version:number;direction:'sent'|'received';myTurn:boolean;proposedByMe:boolean;otherName:string;otherId:string;otherAvatar:number|null;firstId:string;secondId:string;firstName:string;secondName:string;firstAvatar:number|null;secondAvatar:number|null;organizerProposal?:boolean;organizerView?:boolean;firstResponse?:boolean;waitingFor?:string|null};
+type Invitation={elo?:{state:'counts'|'waiting'|'earlier'|'none';canConfirm:boolean}|null;logged?:boolean;ratingIssue?:string|null;result?:Result|null;id:string;status:string;mode:'clubs'|'ultimate';proposedAt:string;proposedLocal:string;proposerTimezone:string;message:string|null;version:number;direction:'sent'|'received';myTurn:boolean;proposedByMe:boolean;otherName:string;otherId:string;otherAvatar:number|null;firstId:string;secondId:string;firstName:string;secondName:string;firstAvatar:number|null;secondAvatar:number|null;organizerProposal?:boolean;organizerView?:boolean;firstResponse?:boolean;waitingFor?:string|null};
 type Ev={id:string;invitationId:string;actorName:string;at:string;action:string;reason:string|null;proposedAt:string|null};
 type Side={goals:number;stars:number|null};
 type Result={mine:Side;theirs:Side;first:Side;second:Side;by:string;at:string};
@@ -14,7 +14,9 @@ type Data={unavailable?:{name:string;reason:string}[];unlinkedProfiles?:{id:stri
 const statusText:Record<string,string>={pending:'Waiting for an answer',accepted:'Accepted',declined:'Declined',cancelled:'Cancelled',expired:'Expired'};
 const eventText:Record<string,string>={logged:'Logged after the fact',reassigned:'Players corrected',corrected:'Result corrected',invited:'Invited',organized:'Organizer proposed',agreed:'First player accepted',countered:'Counter-proposed',accepted:'Accepted',declined:'Declined',cancelled:'Cancelled',expired:'Expired'};
 
-const STAR_OPTIONS=Array.from({length:10},(_,i)=>(i+1)/2);
+const STAR_OPTIONS=[3.5,4,4.5,5];
+const starsWithLegacy=(current:number|null|undefined)=>current!=null&&current<3.5?[current,...STAR_OPTIONS]:STAR_OPTIONS;
+const formatLabel=(mode:'clubs'|'ultimate')=>mode==='ultimate'?'Ultimate Team':'Clubs';
 function LinkAccountForm({person,data,onDone}:{person:DirectoryPlayer;data:Data;onDone:()=>void}){
   const [choice,setChoice]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');
   async function link(){setBusy(true);setError('');try{await api('friendlies',{action:'link-player',accountId:person.id,...(choice==='new'?{create:true}:{playerId:choice})});onDone();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
@@ -28,7 +30,7 @@ function ResultBox({inv,busy,onSave}:{inv:Invitation;busy:boolean;onSave:(body:R
   const r=inv.result,[open,setOpen]=useState(false),[mine,setMine]=useState(String(r?.mine.goals??'')),[theirs,setTheirs]=useState(String(r?.theirs.goals??''));
   const [ms,setMs]=useState(r?.mine.stars==null?'':String(r.mine.stars)),[ts,setTs]=useState(r?.theirs.stars==null?'':String(r.theirs.stars));
   const num=(x:string)=>x.replace(/\D/g,'').slice(0,2),stars=(x:string)=>x===''?null:Number(x);
-  const starPick=(label:string,v:string,set:(x:string)=>void)=><label className="field">{label}<select value={v} onChange={e=>set(e.target.value)}><option value="">Not set</option>{STAR_OPTIONS.map(o=><option key={o} value={o}>{o} ★</option>)}</select></label>;
+  const starPick=(label:string,v:string,set:(x:string)=>void,current:number|null|undefined)=><label className="field">{label}<select value={v} onChange={e=>set(e.target.value)}><option value="">Not set</option>{starsWithLegacy(current).map(o=><option key={o} value={o}>{o} ★{o<3.5?' · previous rating':''}</option>)}</select></label>;
   const show=(side:Side)=>side.stars==null?'':` (${side.stars} ★)`;
   return <div className="friendly-result">
     {r&&<p className="friendly-score"><b>{inv.organizerView?inv.firstName:'You'} {r.mine.goals}{show(r.mine)} – {r.theirs.goals}{show(r.theirs)} {inv.otherName}</b> <span className="fine-print">entered by {r.by}</span></p>}
@@ -37,8 +39,8 @@ function ResultBox({inv,busy,onSave}:{inv:Invitation;busy:boolean;onSave:(body:R
     {inv.organizerView?null:!open?<button type="button" className="btn secondary" onClick={()=>setOpen(true)}>{r?'Correct result':'Add result'}</button>:<div className="sched-form">
       <label className="field">Your goals<input inputMode="numeric" maxLength={2} value={mine} onChange={e=>setMine(num(e.target.value))}/></label>
       <label className="field">{inv.otherName}’s goals<input inputMode="numeric" maxLength={2} value={theirs} onChange={e=>setTheirs(num(e.target.value))}/></label>
-      {starPick('Your team stars',ms,setMs)}{starPick(`${inv.otherName}’s team stars`,ts,setTs)}
-      <button type="button" className="btn primary" disabled={busy||mine===''||theirs===''} onClick={()=>{onSave({action:'result',id:inv.id,myGoals:Number(mine),theirGoals:Number(theirs),myStars:stars(ms),theirStars:stars(ts)});setOpen(false);}}>Save result</button>
+      {inv.mode==='clubs'&&<>{starPick('Your team stars',ms,setMs,r?.mine.stars)}{starPick(`${inv.otherName}’s team stars`,ts,setTs,r?.theirs.stars)}</>}
+      <button type="button" className="btn primary" disabled={busy||mine===''||theirs===''} onClick={()=>{onSave({action:'result',id:inv.id,myGoals:Number(mine),theirGoals:Number(theirs),myStars:inv.mode==='clubs'?stars(ms):null,theirStars:inv.mode==='clubs'?stars(ts):null});setOpen(false);}}>Save result</button>
       <button type="button" className="btn secondary" onClick={()=>setOpen(false)}>Cancel</button>
       <p className="fine-print">Counts for Elo at half weight once both players agree on the score. No standings or awards.</p>
     </div>}
@@ -54,15 +56,15 @@ function AdminResultEditor({inv,timezone,busy,onSave}:{inv:Invitation;timezone:s
     <label className="field">Played at <small>{timezone}</small><input type="datetime-local" value={when} onChange={event=>setWhen(event.target.value)} disabled={busy}/></label>
     <label className="field">{inv.firstName} goals<input inputMode="numeric" maxLength={2} value={firstGoals} onChange={event=>setFirstGoals(number(event.target.value))} disabled={busy}/></label>
     <label className="field">{inv.secondName} goals<input inputMode="numeric" maxLength={2} value={secondGoals} onChange={event=>setSecondGoals(number(event.target.value))} disabled={busy}/></label>
-    <label className="field">{inv.firstName} team stars<select value={firstStars} onChange={event=>setFirstStars(event.target.value)} disabled={busy}><option value="">Not set</option>{STAR_OPTIONS.map(stars=><option value={stars} key={stars}>{stars} ★</option>)}</select></label>
-    <label className="field">{inv.secondName} team stars<select value={secondStars} onChange={event=>setSecondStars(event.target.value)} disabled={busy}><option value="">Not set</option>{STAR_OPTIONS.map(stars=><option value={stars} key={stars}>{stars} ★</option>)}</select></label>
+    {inv.mode==='clubs'&&<><label className="field">{inv.firstName} team stars<select value={firstStars} onChange={event=>setFirstStars(event.target.value)} disabled={busy}><option value="">Not set</option>{starsWithLegacy(inv.result?.first.stars).map(stars=><option value={stars} key={stars}>{stars} ★{stars<3.5?' · previous rating':''}</option>)}</select></label>
+    <label className="field">{inv.secondName} team stars<select value={secondStars} onChange={event=>setSecondStars(event.target.value)} disabled={busy}><option value="">Not set</option>{starsWithLegacy(inv.result?.second.stars).map(stars=><option value={stars} key={stars}>{stars} ★{stars<3.5?' · previous rating':''}</option>)}</select></label></>}
     <label className="field">Reason for change<input value={reason} onChange={event=>setReason(event.target.value)} maxLength={500} placeholder="What needed correction?" disabled={busy}/></label>
-    <button type="button" className="btn primary" disabled={busy||!when||firstGoals===''||secondGoals===''||reason.trim().length<3} onClick={()=>onSave({action:'admin-result',id:inv.id,version:inv.version,local:when,firstGoals:Number(firstGoals),secondGoals:Number(secondGoals),firstStars:firstStars===''?null:Number(firstStars),secondStars:secondStars===''?null:Number(secondStars),reason:reason.trim()})}>Save correction</button>
+    <button type="button" className="btn primary" disabled={busy||!when||firstGoals===''||secondGoals===''||reason.trim().length<3} onClick={()=>onSave({action:'admin-result',id:inv.id,version:inv.version,local:when,firstGoals:Number(firstGoals),secondGoals:Number(secondGoals),firstStars:inv.mode==='clubs'&&firstStars!==''?Number(firstStars):null,secondStars:inv.mode==='clubs'&&secondStars!==''?Number(secondStars):null,reason:reason.trim()})}>Save correction</button>
   </div></details>;
 }
 /** Register a friendly that was already played: no invitation, the score goes in right away. */
 function LogForm({data,timezone,onDone}:{data:Data;timezone?:string;onDone:()=>void}){
-  const owner=!!data.me.owner,[first,setFirst]=useState(''),[opp,setOpp]=useState(''),[when,setWhen]=useState(''),[mine,setMine]=useState(''),[theirs,setTheirs]=useState('');
+  const owner=!!data.me.owner,[first,setFirst]=useState(''),[opp,setOpp]=useState(''),[when,setWhen]=useState(''),[mine,setMine]=useState(''),[theirs,setTheirs]=useState(''),[gameMode,setGameMode]=useState<'clubs'|'ultimate'>('clubs');
   const [ms,setMs]=useState(''),[ts,setTs]=useState(''),[message,setMessage]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');
   const num=(x:string)=>x.replace(/\D/g,'').slice(0,2),stars=(x:string)=>x===''?null:Number(x);
   const choices=owner?data.directory:data.directory.filter(p=>p.eligible),names=new Map(data.directory.map(p=>[p.id,p.name])),firstName=first?names.get(first)??'Player 1':'You',oppName=opp?names.get(opp)??'Opponent':'Opponent';
@@ -70,18 +72,19 @@ function LogForm({data,timezone,onDone}:{data:Data;timezone?:string;onDone:()=>v
   const starPick=(label:string,v:string,set:(x:string)=>void)=><label className="field">{label}<select value={v} onChange={e=>set(e.target.value)}><option value="">Not set</option>{STAR_OPTIONS.map(o=><option key={o} value={o}>{o} ★</option>)}</select></label>;
   async function save(){
     setBusy(true);setError('');
-    try{await api('friendlies',{action:'log',opponentId:opp,asPlayerId:first||undefined,local:when,myGoals:Number(mine),theirGoals:Number(theirs),myStars:stars(ms),theirStars:stars(ts),message});setFirst('');setOpp('');setWhen('');setMine('');setTheirs('');setMs('');setTs('');setMessage('');onDone();}
+    try{await api('friendlies',{action:'log',opponentId:opp,asPlayerId:first||undefined,local:when,mode:gameMode,myGoals:Number(mine),theirGoals:Number(theirs),myStars:gameMode==='clubs'?stars(ms):null,theirStars:gameMode==='clubs'?stars(ts):null,message});setFirst('');setOpp('');setWhen('');setMine('');setTheirs('');setMs('');setTs('');setMessage('');onDone();}
     catch(e){setError((e as Error).message);}finally{setBusy(false);}
   }
   return <div className="sched-form">
     {!timezone&&<p className="notice warning">Set your timezone in My Profile first. The date you enter is read in your profile timezone.</p>}
+    <label className="field">Game mode<select value={gameMode} onChange={e=>setGameMode(e.target.value as 'clubs'|'ultimate')}><option value="clubs">Clubs</option><option value="ultimate">Ultimate Team</option></select></label>
     {owner&&<label className="field">First player <small>{data.me.ranked?'Leave as you to log your own game.':'Your admin account has no linked Elo player; choose your separate player account.'}</small><select value={first} onChange={e=>{setFirst(e.target.value);setOpp('');}}><option value="">{data.me.ranked?'You':'Choose a player'}</option>{choices.map(p=><option key={p.id} value={p.id}>{p.name}{p.ranked?'':' · Link for Elo'}</option>)}</select></label>}
     <label className="field">{owner&&first?'Second player':'Played against'}<select value={opp} onChange={e=>setOpp(e.target.value)}><option value="">Choose a player</option>{choices.filter(p=>p.id!==first).map(p=><option key={p.id} value={p.id}>{p.name}{p.ranked?'':' · Link for Elo'}</option>)}</select></label>
     {owner&&missingLink.map(p=><LinkAccountForm key={p.id} person={p} data={data} onDone={onDone}/>)}
     <label className="field">When it was played <small>{timezone||'no timezone saved'} · local time</small><input type="datetime-local" value={when} onChange={e=>setWhen(e.target.value)}/></label>
     <label className="field">{firstName==='You'?'Your goals':`${firstName}’s goals`}<input inputMode="numeric" maxLength={2} value={mine} onChange={e=>setMine(num(e.target.value))}/></label>
     <label className="field">{oppName}’s goals<input inputMode="numeric" maxLength={2} value={theirs} onChange={e=>setTheirs(num(e.target.value))}/></label>
-    {starPick(firstName==='You'?'Your team stars':`${firstName}’s team stars`,ms,setMs)}{starPick(`${oppName}’s team stars`,ts,setTs)}
+    {gameMode==='clubs'&&<>{starPick(firstName==='You'?'Your team stars':`${firstName}’s team stars`,ms,setMs)}{starPick(`${oppName}’s team stars`,ts,setTs)}</>}
     <label className="field">Note <small>Optional</small><input maxLength={500} value={message} onChange={e=>setMessage(e.target.value)}/></label>
     {error&&<p className="inline-error" role="alert">{error}</p>}
     <button type="button" className="btn primary" disabled={busy||!opp||!when||!timezone||mine===''||theirs===''||missingLink.length>0||(owner&&!data.me.ranked&&!first)||(!owner&&!data.me.ranked)} onClick={()=>void save()}>{busy?'Saving…':'Save played friendly'}</button>
@@ -89,19 +92,20 @@ function LogForm({data,timezone,onDone}:{data:Data;timezone?:string;onDone:()=>v
   </div>;
 }
 function OrganizeForm({data,timezone,onDone}:{data:Data;timezone?:string;onDone:()=>void}){
-  const [first,setFirst]=useState(''),[second,setSecond]=useState(''),[when,setWhen]=useState(''),[message,setMessage]=useState('');
+  const [first,setFirst]=useState(''),[second,setSecond]=useState(''),[when,setWhen]=useState(''),[message,setMessage]=useState(''),[gameMode,setGameMode]=useState<'clubs'|'ultimate'>('clubs');
   const [busy,setBusy]=useState(false),[error,setError]=useState('');
   const eligible=data.directory.filter(p=>p.eligible);
   const preview=when&&timezone?(()=>{const r=zonedLocalToUtc(when,timezone);return r.ok?`= ${formatInZone(r.utc,'UTC')}`:zoneMessages[r.reason];})():'';
   async function save(){
     setBusy(true);setError('');
     try{
-      await api('friendlies',{action:'organize',firstId:first||data.me.id,secondId:second,local:when,message});
+      await api('friendlies',{action:'organize',firstId:first||data.me.id,secondId:second,local:when,mode:gameMode,message});
       setFirst('');setSecond('');setWhen('');setMessage('');onDone();
     }catch(e){setError((e as Error).message);}finally{setBusy(false);}
   }
   return <div className="sched-form">
     {!timezone&&<p className="notice warning">Set your timezone in My Profile first. Times you enter are read in your profile timezone.</p>}
+    <label className="field">Game mode<select value={gameMode} onChange={e=>setGameMode(e.target.value as 'clubs'|'ultimate')}><option value="clubs">Clubs</option><option value="ultimate">Ultimate Team</option></select></label>
     <label className="field">First player<select value={first} onChange={e=>{setFirst(e.target.value);setSecond('');}}><option value="">You</option>{eligible.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
     <label className="field">Second player<select value={second} onChange={e=>setSecond(e.target.value)}><option value="">Choose a player</option>{eligible.filter(p=>p.id!==first).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
     <label className="field">Date and time <small>{timezone||'no timezone saved'} · local time</small><input type="datetime-local" value={when} onChange={e=>setWhen(e.target.value)}/></label>
@@ -127,7 +131,7 @@ function CorrectLoggedPlayers({inv,data,busy,onSave,onLinked}:{inv:Invitation;da
 }
 export default function Friendlies({timezone,mode='active'}:{timezone?:string;mode?:'active'|'history'}){
   const [data,setData]=useState<Data|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false);
-  const [who,setWho]=useState(''),[when,setWhen]=useState(''),[message,setMessage]=useState(''),[counterFor,setCounterFor]=useState<string|null>(null);
+  const [who,setWho]=useState(''),[when,setWhen]=useState(''),[message,setMessage]=useState(''),[gameMode,setGameMode]=useState<'clubs'|'ultimate'>('clubs'),[counterFor,setCounterFor]=useState<string|null>(null);
   const [historyQuery,setHistoryQuery]=useState(''),[historyFilter,setHistoryFilter]=useState<'played'|'needs-score'|'voided'|'all'>('played');
   const zone=timezone&&validTimezone(timezone)?timezone:Intl.DateTimeFormat().resolvedOptions().timeZone;
   const load=useCallback(async()=>{try{setData(await api<Data>('friendlies'));}catch(e){setError((e as Error).message);}},[]);
@@ -153,7 +157,7 @@ export default function Friendlies({timezone,mode='active'}:{timezone?:string;mo
   const card=(i:Invitation)=>{
     const events=data.events.filter(e=>e.invitationId===i.id);
     return <div className="sched-card" key={i.id}>
-      <p className="friendly-head"><Avatar id={i.otherId} name={i.otherName} version={i.otherAvatar} size={32}/><span><b>{i.organizerView?`${i.firstName} vs ${i.otherName}`:i.organizerProposal?`Organizer arranged your friendly with ${i.otherName}`:i.logged?(i.proposedByMe?`Played with ${i.otherName}`:`${i.otherName} logged a game with you`):i.direction==='sent'?`You invited ${i.otherName}`:`${i.otherName} invited you`}</b> · {i.status==='cancelled'?'Cancelled':i.logged?'Logged after the fact':statusText[i.status]??i.status}</span></p>
+      <p className="friendly-head"><Avatar id={i.otherId} name={i.otherName} version={i.otherAvatar} size={32}/><span><b>{i.organizerView?`${i.firstName} vs ${i.otherName}`:i.organizerProposal?`Organizer arranged your friendly with ${i.otherName}`:i.logged?(i.proposedByMe?`Played with ${i.otherName}`:`${i.otherName} logged a game with you`):i.direction==='sent'?`You invited ${i.otherName}`:`${i.otherName} invited you`}</b> · {formatLabel(i.mode)} · {i.status==='cancelled'?'Cancelled':i.logged?'Logged after the fact':statusText[i.status]??i.status}</span></p>
       <p>{formatInZone(i.proposedAt,zone)} <span className="fine-print">({formatInZone(i.proposedAt,'UTC')})</span></p>
       {i.proposerTimezone!==zone&&<p className="fine-print">Entered as {i.proposedLocal.replace('T',' ')} {i.proposerTimezone}.</p>}
       {i.message&&<p className="fine-print">“{i.message}”</p>}
@@ -191,7 +195,7 @@ export default function Friendlies({timezone,mode='active'}:{timezone?:string;mo
       <div className="admin-friendly-toolbar"><label className="field">Find a match<input type="search" value={historyQuery} onChange={e=>setHistoryQuery(e.target.value)} placeholder="Search either player"/></label><div className="admin-friendly-filters" role="group" aria-label="Match status">{([['played','Played'],['needs-score','Needs score'],['voided','Voided'],['all','All']] as const).map(([key,label])=><button key={key} type="button" className={'btn '+(historyFilter===key?'primary':'secondary')} aria-pressed={historyFilter===key} onClick={()=>setHistoryFilter(key)}>{label} <span>{counts[key]}</span></button>)}</div></div>
       {matches.length?<div className="admin-friendly-list">{matches.map(i=>{const events=activity(i),rated=i.status==='cancelled'?'Voided':i.ratingIssue?'Not in Elo':i.elo?.state==='counts'?'Counts for Elo':i.elo?.state==='waiting'?'Awaiting score confirmation':i.elo?.state==='earlier'?'Before Elo started':'No Elo score';return <article className="admin-friendly-match" key={i.id}>
         <div className="admin-friendly-main"><div className="admin-friendly-side"><Avatar id={i.firstId} name={i.firstName} version={i.firstAvatar} size={36}/><strong>{i.firstName}</strong></div><div className="admin-friendly-score" aria-label={i.result?`${i.result.first.goals} to ${i.result.second.goals}`:'No score'}>{i.result?<><b>{i.result.first.goals}</b><span>–</span><b>{i.result.second.goals}</b></>:<span>— : —</span>}</div><div className="admin-friendly-side admin-friendly-side-second"><Avatar id={i.secondId} name={i.secondName} version={i.secondAvatar} size={36}/><strong>{i.secondName}</strong></div></div>
-        <div className="admin-friendly-meta"><span>{formatInZone(i.proposedAt,zone)}</span><span className={'admin-friendly-state '+(i.status==='cancelled'?'is-void':'')}>{i.status==='accepted'?'Played':statusText[i.status]??i.status}</span><span>{rated}</span>{i.result&&(i.result.first.stars!=null||i.result.second.stars!=null)&&<span>Teams: {i.result.first.stars??'—'} ★ / {i.result.second.stars??'—'} ★</span>}</div>
+        <div className="admin-friendly-meta"><span>{formatInZone(i.proposedAt,zone)}</span><span>{formatLabel(i.mode)}</span><span className={'admin-friendly-state '+(i.status==='cancelled'?'is-void':'')}>{i.status==='accepted'?'Played':statusText[i.status]??i.status}</span><span>{rated}</span>{i.mode==='clubs'&&i.result&&(i.result.first.stars!=null||i.result.second.stars!=null)&&<span>Teams: {i.result.first.stars??'—'} ★ / {i.result.second.stars??'—'} ★</span>}</div>
         {i.ratingIssue&&<p className="notice warning">{i.ratingIssue}</p>}
         {i.message&&<p className="fine-print">Note: {i.message}</p>}
         {i.status==='accepted'&&<div className="admin-friendly-actions"><AdminResultEditor key={i.id+':result:'+i.version} inv={i} timezone={zone} busy={busy} onSave={body=>void send(body)}/>{i.result&&<CorrectLoggedPlayers key={i.id+':players:'+i.version} inv={i} data={data} busy={busy} onSave={body=>void send(body)} onLinked={()=>void load()}/>}<button type="button" className="btn secondary" disabled={busy} onClick={()=>{const reason=window.prompt(`Void ${i.firstName} vs ${i.secondName}? The result will stop counting toward Elo. Enter a reason:`);if(reason&&reason.trim().length>=3)void send({action:'cancel',id:i.id,version:i.version,message:reason.trim()});}}>Void match</button></div>}
@@ -202,13 +206,14 @@ export default function Friendlies({timezone,mode='active'}:{timezone?:string;mo
   if(mode==='history')return <section className="panel friendlies-panel"><h2>Friendly match history</h2><p className="fine-print">Played, cancelled and expired friendlies are saved here. Confirm scores or correct a logged result from its match card.</p>{error&&<p className="inline-error" role="alert">{error}</p>}{history.length?history.map(card):<p className="fine-print">No past friendlies yet.</p>}</section>;
   return <section className="panel friendlies-panel" aria-labelledby="friendlies-heading">
     <h2 id="friendlies-heading" className="visually-hidden">Friendlies</h2>
-    <p className="fine-print">Casual matches between two players. After you play, add the score and each team’s stars. Once both players agree on the score it counts for Elo at half weight. No standings, awards or proof. Times show in {zone}.{data.me.owner?' As organizer, you can see every friendly and void a played match with a reason.':''}</p>
+    <p className="fine-print">Play clubs or Ultimate Team. After a club game, add the score and optional team stars (3.5–5); Ultimate Team games use no club stars. Agreed scores count for Elo at half weight, with a scoreline and clean-sheet bonus for wins. No standings, awards or proof. Times show in {zone}.{data.me.owner?' As organizer, you can see every friendly and void a played match with a reason.':''}</p>
     {error&&<p className="inline-error" role="alert">{error}</p>}
     {!data.me.eligible?<p className="notice">{data.me.reason??'Friendlies are not available to you yet.'}</p>:<>
       <details className="schedule-editor" open={!data.invitations.length}><summary>Invite a player</summary>
         {!data.directory.some(p=>p.eligible)&&<div className="notice"><p><b>No one is available to invite yet.</b></p>{data.unavailable?.length?<ul>{data.unavailable.map(u=><li key={u.name}><b>{u.name}</b>: {u.reason}</li>)}</ul>:<p className="fine-print">Other players show up here once they have a finished profile (username, platform, timezone and an in-game ID).</p>}</div>}
+        <label className="field">Game mode<select value={gameMode} onChange={e=>setGameMode(e.target.value as 'clubs'|'ultimate')}><option value="clubs">Clubs</option><option value="ultimate">Ultimate Team</option></select></label>
         <label className="field">Player<select value={who} onChange={e=>setWho(e.target.value)}><option value="">Choose a player</option>{data.directory.filter(p=>p.eligible).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
-        {timeForm('Send invitation',()=>void send({action:'invite',inviteeId:who,local:when,message}),!who)}
+        {timeForm('Send invitation',()=>void send({action:'invite',inviteeId:who,local:when,mode:gameMode,message}),!who)}
         <p className="fine-print">Up to {data.me.maxPending} invitations can be waiting at once. Only you and the invited player can see an invitation.</p>
       </details>
       {data.me.owner&&<details className="schedule-editor"><summary>Arrange a friendly for two players</summary><OrganizeForm data={data} timezone={timezone} onDone={()=>void load()}/></details>}

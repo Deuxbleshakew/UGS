@@ -69,10 +69,10 @@ export function communityRankings(ownerId:string){
       const outcome=resolveTie({id:f.tie_id,player_a:String(raw.player_a),player_b:String(raw.player_b)} as PlayoffTie,fs);
       if(!outcome.complete||!outcome.winner)continue;
       const legs=fs.filter(leg=>leg.tie_id===f.tie_id);
-      events.push({id:f.tie_id,home:String(raw.player_a),away:String(raw.player_b),score:outcome.winner===raw.player_a?1:0,at:legs.map(l=>l.finalized_at!).sort().at(-1)!,order:Math.max(...legs.map(l=>l.rating_order))});
+      events.push({id:f.tie_id,home:String(raw.player_a),away:String(raw.player_b),score:outcome.winner===raw.player_a?1:0,homeGoals:outcome.a,awayGoals:outcome.b,at:legs.map(l=>l.finalized_at!).sort().at(-1)!,order:Math.max(...legs.map(l=>l.rating_order))});
     }else{
       const r=f.report,hs=f.tie_id?undefined:stars.get(`${f.tournament_id}/${f.home}`),as=f.tie_id?undefined:stars.get(`${f.tournament_id}/${f.away}`);
-      events.push({homeStars:hs,awayStars:as,id:f.id,home:f.home_player_id,away:f.away_player_id,score:r.homeScore>r.awayScore?1:r.homeScore<r.awayScore?0:0.5,at:f.finalized_at,order:f.rating_order});
+      events.push({homeStars:hs,awayStars:as,id:f.id,home:f.home_player_id,away:f.away_player_id,homeGoals:r.homeScore,awayGoals:r.awayScore,score:r.homeScore>r.awayScore?1:r.homeScore<r.awayScore?0:0.5,at:f.finalized_at,order:f.rating_order});
     }
   }
   // Only activated people are ranked: a manager slot nobody has signed in to (even one with an assigned username or a pending invite) is a placeholder. Anyone with rated results stays listed so history is never hidden.
@@ -232,7 +232,7 @@ export function cancelPlayoff(tid:string,pid:string,user:Actor,input:unknown){
 export function getClubStars(tid:string):Record<string,number>{return Object.fromEntries(rows<{club_id:string;stars:number}>('SELECT club_id,stars FROM club_stars WHERE tournament_id=?',tid).map(r=>[r.club_id,r.stars]));}
 // Owner-only. Elo is always recalculated from finalized results, so a change applies to past results too.
 export function setClubStars(tid:string,user:Actor,input:unknown){
-  const data=z.object({stars:z.record(z.number().min(0.5).max(5).nullable())}).parse(input);
+  const data=z.object({stars:z.record(z.number().min(3.5).max(5).nullable())}).parse(input);
   return atomic(()=>{
     const t=tournament(tid);if(t.owner_id!==user.userId)fail('Only the organizer can set club stars.',403);
     const config=JSON.parse(t.config) as Config,known=new Set(config.clubs.map(c=>c.id));

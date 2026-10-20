@@ -14,7 +14,7 @@ import {zonedLocalToUtc,zoneMessages} from './timezone';
 // Friendly invitations. A friendly is not a fixture: it has no standings, awards or proof. Once both players agree on the score it counts for Elo at half weight (see friendly-elo.ts).
 // Players see their own friendlies. The owner can review, correct and cancel any friendly.
 type Actor={userId:string;displayName:string};
-type Inv={id:string;inviter_id:string;invitee_id:string;pair_key:string;status:string;proposed_at:string;proposed_local:string;proposer_timezone:string;proposed_by:string;turn_id:string|null;message:string|null;created_at:string;updated_at:string;version:number};
+type Inv={id:string;inviter_id:string;invitee_id:string;pair_key:string;status:string;mode:'clubs'|'ultimate';proposed_at:string;proposed_local:string;proposer_timezone:string;proposed_by:string;turn_id:string|null;message:string|null;created_at:string;updated_at:string;version:number};
 /** Safety limit on outgoing pending invitations per person (abuse protection, not a league rule). */
 export const MAX_PENDING_OUT=10;
 function fail(m:string,s=400):never{throw new AccountAccessError(m,s);}
@@ -84,17 +84,27 @@ function toUtc(local:string,tz:string){
 }
 const local=z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/,'Enter a valid date and time.');
 const note=z.string().trim().max(500).optional();
-/** Same 0.5-5 star scale as club stars; optional because a team may not have a rating. */
+/** Older results can contain lower star values; preserve them for confirmation and history. */
 const starValue=z.number().min(0.5).max(5).refine(n=>Number.isInteger(n*2),'Stars go in steps of 0.5.').nullable();
+const mode=z.enum(['clubs','ultimate']).default('clubs');
+function validateStars(gameMode:'clubs'|'ultimate',first:number|null,second:number|null,previous?:{first:number|null;second:number|null}){
+  if(gameMode==='ultimate'&&(first!=null||second!=null))fail('Ultimate Team games do not use club stars.');
+  if(gameMode==='clubs'&&((first!=null&&first<3.5&&first!==previous?.first)||(second!=null&&second<3.5&&second!==previous?.second)))fail('Club teams must be rated at least 3.5 stars.');
+}
+function lastStars(d:DatabaseSync,id:string){
+  const row=d.prepare("SELECT reason FROM friendly_events WHERE invitation_id=? AND action='result' ORDER BY at DESC,rowid DESC LIMIT 1").get(id) as {reason:string}|undefined;
+  if(!row)return undefined;
+  try{const result=JSON.parse(row.reason) as {inviter?:{stars?:number|null};invitee?:{stars?:number|null}};return {first:result.inviter?.stars??null,second:result.invitee?.stars??null};}catch{return undefined;}
+}
 const actionSchema=z.discriminatedUnion('action',[
-  z.object({action:z.literal('invite'),inviteeId:z.string().min(1).max(100),local,message:note}),
-  z.object({action:z.literal('organize'),firstId:z.string().min(1).max(100),secondId:z.string().min(1).max(100),local,message:note}),
+  z.object({action:z.literal('invite'),inviteeId:z.string().min(1).max(100),local,mode,message:note}),
+  z.object({action:z.literal('organize'),firstId:z.string().min(1).max(100),secondId:z.string().min(1).max(100),local,mode,message:note}),
   z.object({action:z.literal('link-player'),accountId:z.string().min(1).max(100),playerId:z.string().min(1).max(100).optional(),create:z.boolean().optional()}),
   z.object({action:z.literal('accept'),id:z.string(),version:z.number().int()}),
   z.object({action:z.literal('decline'),id:z.string(),version:z.number().int(),message:note}),
   z.object({action:z.literal('counter'),id:z.string(),version:z.number().int(),local,message:note}),
   z.object({action:z.literal('cancel'),id:z.string(),version:z.number().int(),message:note}),
-  z.object({action:z.literal('log'),opponentId:z.string().min(1).max(100),asPlayerId:z.string().min(1).max(100).optional(),local,myGoals:z.number().int().min(0).max(99),theirGoals:z.number().int().min(0).max(99),myStars:starValue,theirStars:starValue,message:note}),
+  z.object({action:z.literal('log'),opponentId:z.string().min(1).max(100),asPlayerId:z.string().min(1).max(100).optional(),local,mode,myGoals:z.number().int().min(0).max(99),theirGoals:z.number().int().min(0).max(99),myStars:starValue,theirStars:starValue,message:note}),
   z.object({action:z.literal('reassign'),id:z.string(),version:z.number().int(),firstId:z.string().min(1).max(100),secondId:z.string().min(1).max(100),reason:z.string().trim().min(3).max(500)}),
   z.object({action:z.literal('admin-result'),id:z.string(),version:z.number().int(),local,firstGoals:z.number().int().min(0).max(99),secondGoals:z.number().int().min(0).max(99),firstStars:starValue,secondStars:starValue,reason:z.string().trim().min(3).max(500)}),
   z.object({action:z.literal('result'),id:z.string(),myGoals:z.number().int().min(0).max(99),theirGoals:z.number().int().min(0).max(99),myStars:starValue,theirStars:starValue}),
@@ -140,7 +150,7 @@ export function friendlyAction(actor:Actor,input:unknown){
       if((d.prepare("SELECT COUNT(*) AS n FROM friendly_invitations WHERE inviter_id=? AND status='pending'").get(actor.userId) as {n:number}).n>=MAX_PENDING_OUT)fail(`You already have ${MAX_PENDING_OUT} pending invitations. Wait for answers or cancel some.`,429);
       checkTime(d,actor.userId,data.inviteeId,at,null);
       const id=uid(),t=nowIso();
-      d.prepare("INSERT INTO friendly_invitations(id,inviter_id,invitee_id,pair_key,status,proposed_at,proposed_local,proposer_timezone,proposed_by,turn_id,message,created_at,updated_at) VALUES(?,?,?,?,'pending',?,?,?,?,?,?,?,?)").run(id,actor.userId,data.inviteeId,pairKey(actor.userId,data.inviteeId),at,data.local,me.timezone,actor.userId,data.inviteeId,data.message||null,t,t);
+      d.prepare("INSERT INTO friendly_invitations(id,inviter_id,invitee_id,pair_key,status,mode,proposed_at,proposed_local,proposer_timezone,proposed_by,turn_id,message,created_at,updated_at) VALUES(?,?,?,?,'pending',?,?,?,?,?,?,?,?,?)").run(id,actor.userId,data.inviteeId,pairKey(actor.userId,data.inviteeId),data.mode,at,data.local,me.timezone,actor.userId,data.inviteeId,data.message||null,t,t);
       event(d,id,who,'invited',data.message||null,at);return {ok:true,id};
     }
     if(data.action==='organize'){
@@ -153,13 +163,14 @@ export function friendlyAction(actor:Actor,input:unknown){
       const id=uid(),t=nowIso();
       // The first player answers first. The invitation table requires
       // proposed_by and turn_id to be different participants.
-      d.prepare("INSERT INTO friendly_invitations(id,inviter_id,invitee_id,pair_key,status,proposed_at,proposed_local,proposer_timezone,proposed_by,turn_id,message,created_at,updated_at) VALUES(?,?,?,?,'pending',?,?,?,?,?,?,?,?)")
-        .run(id,data.firstId,data.secondId,pair,at,data.local,me.timezone,data.secondId,data.firstId,data.message||null,t,t);
+      d.prepare("INSERT INTO friendly_invitations(id,inviter_id,invitee_id,pair_key,status,mode,proposed_at,proposed_local,proposer_timezone,proposed_by,turn_id,message,created_at,updated_at) VALUES(?,?,?,?,'pending',?,?,?,?,?,?,?,?,?)")
+        .run(id,data.firstId,data.secondId,pair,data.mode,at,data.local,me.timezone,data.secondId,data.firstId,data.message||null,t,t);
       d.prepare('INSERT INTO friendly_organizer_proposals(invitation_id,created_by) VALUES(?,?)').run(id,actor.userId);
       event(d,id,who,'organized',data.message||null,at);
       return {ok:true,id};
     }
     if(data.action==='log'){
+      validateStars(data.mode,data.myStars,data.theirStars);
       // A friendly that was already played: recorded straight away as an accepted game with its score. No invitation, no waiting.
       // Counts for Elo once the other player confirms the score (or straight away when the organizer logs it for two other players). The organizer may log a game between two other players.
       const owner=profileOf(actor.userId)?.a.owner===1,firstId=data.asPlayerId&&data.asPlayerId!==actor.userId?data.asPlayerId:actor.userId;
@@ -174,7 +185,7 @@ export function friendlyAction(actor:Actor,input:unknown){
       if(t<Date.now()-366*86400000)fail('That date is too far back.');
       if(d.prepare("SELECT 1 FROM friendly_invitations WHERE pair_key=? AND status='accepted' AND proposed_at=?").get(pairKey(firstId,data.opponentId),at))fail('A friendly between these two players is already recorded at that time.',409);
       const id=uid(),now=nowIso();
-      d.prepare("INSERT INTO friendly_invitations(id,inviter_id,invitee_id,pair_key,status,proposed_at,proposed_local,proposer_timezone,proposed_by,turn_id,message,created_at,updated_at) VALUES(?,?,?,?,'accepted',?,?,?,?,NULL,?,?,?)").run(id,firstId,data.opponentId,pairKey(firstId,data.opponentId),at,data.local,me.timezone,firstId,data.message||null,now,now);
+      d.prepare("INSERT INTO friendly_invitations(id,inviter_id,invitee_id,pair_key,status,mode,proposed_at,proposed_local,proposer_timezone,proposed_by,turn_id,message,created_at,updated_at) VALUES(?,?,?,?,'accepted',?,?,?,?,?,NULL,?,?,?)").run(id,firstId,data.opponentId,pairKey(firstId,data.opponentId),data.mode,at,data.local,me.timezone,firstId,data.message||null,now,now);
       event(d,id,who,'logged',data.message||null,at);
       event(d,id,who,'result',JSON.stringify({inviter:{goals:data.myGoals,stars:data.myStars},invitee:{goals:data.theirGoals,stars:data.theirStars}}),at);
       return {ok:true,id};
@@ -185,6 +196,7 @@ export function friendlyAction(actor:Actor,input:unknown){
     const isOwner=profileOf(actor.userId)?.a.owner===1;
     if(!inv||(!participant&&!(isOwner&&(data.action==='cancel'||data.action==='reassign'||data.action==='admin-result'))))return fail('Invitation not found.',404);
     if(data.action==='admin-result'){
+      validateStars(inv.mode,data.firstStars,data.secondStars,lastStars(d,inv.id));
       if(!isOwner)fail('Only the organizer can correct another player’s result.',403);
       if(data.version!==inv.version)fail('This match changed. Refresh before correcting it.',409);
       if(inv.status!=='accepted'||new Date(inv.proposed_at).getTime()>Date.now())fail('Only a played, accepted friendly can be corrected.',409);
@@ -222,6 +234,7 @@ export function friendlyAction(actor:Actor,input:unknown){
       if(new Date(inv.proposed_at).getTime()>Date.now())fail('This friendly has not started yet. Add the result once it has been played.',409);
       const mine=inv.inviter_id===actor.userId;
       const body={inviter:{goals:mine?data.myGoals:data.theirGoals,stars:mine?data.myStars:data.theirStars},invitee:{goals:mine?data.theirGoals:data.myGoals,stars:mine?data.theirStars:data.myStars}};
+      validateStars(inv.mode,body.inviter.stars,body.invitee.stars,lastStars(d,inv.id));
       event(d,inv.id,who,'result',JSON.stringify(body),inv.proposed_at);return {ok:true};
     }
     if((data as {version:number}).version!==inv.version)fail('This invitation has already changed. Refresh to see the latest.',409);
@@ -280,7 +293,7 @@ export function getFriendlies(actor:Actor){
   const name=(id:string)=>eligibility(id).name||'Player';
   const organized=rows.length?d.prepare(`SELECT invitation_id,first_response FROM friendly_organizer_proposals WHERE invitation_id IN (${rows.map(()=>'?').join(',')})`).all(...rows.map(r=>r.id)) as {invitation_id:string;first_response:number}[]:[];
   const organizedMap=new Map(organized.map(r=>[r.invitation_id,r.first_response]));
-  const invitationsBase=rows.map(i=>{const organizerView=i.inviter_id!==actor.userId&&i.invitee_id!==actor.userId,other=i.inviter_id===actor.userId?i.invitee_id:i.inviter_id;return {id:i.id,status:i.status,proposedAt:i.proposed_at,proposedLocal:i.proposed_local,proposerTimezone:i.proposer_timezone,message:i.message,version:i.version,createdAt:i.created_at,updatedAt:i.updated_at,direction:i.inviter_id===actor.userId?'sent':'received',myTurn:i.turn_id===actor.userId,proposedByMe:i.proposed_by===actor.userId,otherName:name(other),otherId:other,otherAvatar:avatarVersion(other),firstId:i.inviter_id,secondId:i.invitee_id,firstName:name(i.inviter_id),secondName:name(i.invitee_id),firstAvatar:avatarVersion(i.inviter_id),secondAvatar:avatarVersion(i.invitee_id),organizerProposal:organizedMap.has(i.id),organizerView,firstResponse:!!organizedMap.get(i.id),waitingFor:i.status==='pending'?name(i.turn_id??''):null};});
+  const invitationsBase=rows.map(i=>{const organizerView=i.inviter_id!==actor.userId&&i.invitee_id!==actor.userId,other=i.inviter_id===actor.userId?i.invitee_id:i.inviter_id;return {id:i.id,status:i.status,mode:i.mode,proposedAt:i.proposed_at,proposedLocal:i.proposed_local,proposerTimezone:i.proposer_timezone,message:i.message,version:i.version,createdAt:i.created_at,updatedAt:i.updated_at,direction:i.inviter_id===actor.userId?'sent':'received',myTurn:i.turn_id===actor.userId,proposedByMe:i.proposed_by===actor.userId,otherName:name(other),otherId:other,otherAvatar:avatarVersion(other),firstId:i.inviter_id,secondId:i.invitee_id,firstName:name(i.inviter_id),secondName:name(i.invitee_id),firstAvatar:avatarVersion(i.inviter_id),secondAvatar:avatarVersion(i.invitee_id),organizerProposal:organizedMap.has(i.id),organizerView,firstResponse:!!organizedMap.get(i.id),waitingFor:i.status==='pending'?name(i.turn_id??''):null};});
   const ids=rows.map(r=>r.id),marks=ids.map(()=>'?').join(',');
   const events=ids.length?d.prepare(`SELECT id,invitation_id AS invitationId,actor_name AS actorName,at,action,reason,proposed_at AS proposedAt FROM friendly_events WHERE invitation_id IN (${marks}) AND action<>'result' ORDER BY at,rowid`).all(...ids):[];
   const resultRows=ids.length?d.prepare(`SELECT invitation_id AS id,actor_name AS actorName,at,reason FROM friendly_events WHERE invitation_id IN (${marks}) AND action='result' ORDER BY at,rowid`).all(...ids) as {id:string;actorName:string;at:string;reason:string}[]:[];

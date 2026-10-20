@@ -22,7 +22,7 @@ export function evaluateFriendlies():Map<string,Evaluated&{home:string;away:stri
   const d=database() as DatabaseSync,out=new Map<string,Evaluated&{home:string;away:string}>();
   const started=(d.prepare('SELECT started_at FROM friendly_elo_start WHERE id=1').get() as {started_at:string}|undefined)?.started_at;
   const owners=new Set((d.prepare('SELECT id FROM accounts WHERE owner=1').all() as {id:string}[]).map(r=>r.id));
-  const invs=d.prepare("SELECT id,inviter_id,invitee_id FROM friendly_invitations WHERE status='accepted'").all() as {id:string;inviter_id:string;invitee_id:string}[];
+  const invs=d.prepare("SELECT id,inviter_id,invitee_id,mode FROM friendly_invitations WHERE status='accepted'").all() as {id:string;inviter_id:string;invitee_id:string;mode:'clubs'|'ultimate'}[];
   const events=d.prepare("SELECT invitation_id,actor_id,at,action,reason FROM friendly_events WHERE action='result' AND invitation_id IN (SELECT id FROM friendly_invitations WHERE status='accepted') ORDER BY at,rowid").all() as Ev[];
   const byInv=new Map<string,Ev[]>();for(const e of events){const l=byInv.get(e.invitation_id)??[];l.push(e);byInv.set(e.invitation_id,l);}
   for(const inv of invs){
@@ -37,7 +37,7 @@ export function evaluateFriendlies():Map<string,Evaluated&{home:string;away:stri
       if(other&&theirBody&&same(body,theirBody))at=last.at;else needs=other;
     }
     if(at){state=started&&at>=started?'counts':'earlier';}
-    const result:EloResult|undefined=state==='counts'?{id:'friendly:'+inv.id,home:inv.inviter_id,away:inv.invitee_id,score:body.inviter.goals>body.invitee.goals?1:body.inviter.goals<body.invitee.goals?0:0.5,at:at!,order:0,homeStars:body.inviter.stars??undefined,awayStars:body.invitee.stars??undefined,weight:FRIENDLY_WEIGHT}:undefined;
+    const result:EloResult|undefined=state==='counts'?{id:'friendly:'+inv.id,home:inv.inviter_id,away:inv.invitee_id,score:body.inviter.goals>body.invitee.goals?1:body.inviter.goals<body.invitee.goals?0:0.5,homeGoals:body.inviter.goals,awayGoals:body.invitee.goals,at:at!,order:0,homeStars:inv.mode==='clubs'?body.inviter.stars??undefined:undefined,awayStars:inv.mode==='clubs'?body.invitee.stars??undefined:undefined,weight:FRIENDLY_WEIGHT}:undefined;
     out.set(inv.id,{state,needs,result,home:inv.inviter_id,away:inv.invitee_id});
   }
   return out;

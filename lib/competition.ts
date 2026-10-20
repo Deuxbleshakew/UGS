@@ -3,13 +3,20 @@ import type { Config, Fixture, Report } from './domain';
 export const ELO_START = 1000;
 export const ELO_K = 32;
 export type CommunityPlayer = { id:string; name:string; created_at:string; in_tournament?:number };
-export type EloResult = { id:string; home:string; away:string; score:number; at:string; order:number; homeStars?:number; awayStars?:number; weight?:number };
+export type EloResult = { id:string; home:string; away:string; score:number; at:string; order:number; homeGoals?:number; awayGoals?:number; homeStars?:number; awayStars?:number; weight?:number };
 // Beating a higher-rated club is worth more, beating a lower-rated one less; losing with the better club costs more. No stars = neutral.
 export const STAR_WEIGHT=0.2,STAR_MIN=0.7,STAR_MAX=1.4;
 export function starMultiplier(change:number,own?:number,opp?:number){
   if(own==null||opp==null||change===0)return 1;
-  const gap=opp-own,raw=change>0?1+STAR_WEIGHT*gap:1-STAR_WEIGHT*gap;
+  const gap=Math.max(3.5,opp)-Math.max(3.5,own),raw=change>0?1+STAR_WEIGHT*gap:1-STAR_WEIGHT*gap;
   return Math.min(STAR_MAX,Math.max(STAR_MIN,raw));
+}
+/** Rewards decisive wins without allowing a high-scoring game to dominate the ratings. Draws have no bonus. */
+export function scorelineMultiplier(match:EloResult){
+  const h=match.homeGoals,a=match.awayGoals;
+  if(h==null||a==null||h===a)return 1;
+  const winner=Math.max(h,a),loser=Math.min(h,a);
+  return 1+0.05*Math.min(4,Math.max(0,winner-1))+0.05*Math.min(4,winner-loser-1)+(loser===0?0.1:0);
 }
 export type EloRow = CommunityPlayer & { rating:number; rank:number; played:number; wins:number; draws:number; losses:number; lastChange:number; peak:number; form:string[] };
 export type SeededPlayer = { id:string; name:string; rating:number; seed:number };
@@ -24,7 +31,7 @@ export function eloRankings(players:CommunityPlayer[], results:EloResult[]):EloR
     const home=rows.get(match.home),away=rows.get(match.away);
     if(!home||!away||home.id===away.id)continue;
     const expected=1/(1+10**((away.rating-home.rating)/400));
-    const delta=Math.round(ELO_K*(match.score-expected)*(match.weight??1)*1e6)/1e6;
+    const delta=Math.round(ELO_K*(match.score-expected)*(match.weight??1)*scorelineMultiplier(match)*1e6)/1e6;
     for(const [row,base,score,own,opp] of [[home,delta,match.score,match.homeStars,match.awayStars],[away,-delta,1-match.score,match.awayStars,match.homeStars]] as const){
       const change=Math.round(base*starMultiplier(base,own,opp)*1e6)/1e6;
       row.rating=Math.round((row.rating+change)*1e6)/1e6;row.lastChange=change;row.peak=Math.max(row.peak,row.rating);row.played++;

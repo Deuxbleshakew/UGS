@@ -16,7 +16,7 @@ const RATINGS:[string[],number,number][]=[
   [['PSV Eindhoven','PSV'],78,4],[['FC Porto','Porto'],78,4],[['RB Leipzig','Leipzig'],77,4],[['Lille','LOSC Lille','LOSC'],77,4],[['Eintracht Frankfurt','Frankfurt'],76,4],
   [['Monaco','AS Monaco'],76,4],[['Lens','RC Lens'],76,4],[['Ajax'],76,4],[['Beşiktaş','Besiktas'],76,4],[['Sevilla','Sevilla FC'],75,4],[['Marseille','Olympique de Marseille'],75,4],
   [['Fiorentina','ACF Fiorentina'],73,3.5],[['Sparta Praha','Sparta Prague','AC Sparta Praha'],73,3.5],[['Viktoria Plzeň','Viktoria Plzen'],72,3.5],[['Club Brugge'],72,3.5],
-  [['Young Boys','BSC Young Boys'],71,3.5],[['Bodø/Glimt','Bodo Glimt','FK Bodø/Glimt'],71,3.5],[['Brøndby','Brondby','Brøndby IF','Brondby IF'],68,3],
+  [['Young Boys','BSC Young Boys'],71,3.5],[['Bodø/Glimt','Bodo Glimt','FK Bodø/Glimt'],71,3.5],[['Brøndby','Brondby','Brøndby IF','Brondby IF'],68,3.5],
 ];
 const exact=new Map<string,{ovr:number;stars:number;words:string[]}>();
 for(const [names,ovr,stars] of RATINGS)for(const n of names){const k=normalizeName(n);exact.set(k,{ovr,stars,words:k.split(' ')});}

@@ -5,15 +5,21 @@ import {pathToFileURL} from 'node:url';
 import {build} from 'esbuild';
 
 const root=process.cwd(),dir=fs.mkdtempSync(path.join(root,'.test-friendly-organizer-'));
-const bundle=path.join(dir,'friendlies.mjs'),competitionBundle=path.join(dir,'competition.mjs');
+const bundle=path.join(dir,'friendlies.mjs'),competitionBundle=path.join(dir,'competition.mjs'),ratingBundle=path.join(dir,'rating.mjs');
 process.env.MATCHROOM_DATA_DIR=dir;
 let testDb;
 try{
   await build({entryPoints:['lib/friendlies-server.ts'],bundle:true,platform:'node',format:'esm',packages:'external',outfile:bundle});
   await build({entryPoints:['lib/competition-server.ts'],bundle:true,platform:'node',format:'esm',packages:'external',outfile:competitionBundle});
+  await build({entryPoints:['lib/competition.ts'],bundle:true,platform:'node',format:'esm',packages:'external',outfile:ratingBundle});
   const {database}=await import('../scripts/local-store.mjs');
   const {friendlyAction,getFriendlies}=await import(pathToFileURL(bundle).href);
   const {communityRankings}=await import(pathToFileURL(competitionBundle).href);
+  const {eloRankings}=await import(pathToFileURL(ratingBundle).href);
+  const rating=(homeGoals,awayGoals)=>eloRankings([{id:'h',name:'Home',created_at:'now'},{id:'a',name:'Away',created_at:'now'}],[{id:'one',home:'h',away:'a',homeGoals,awayGoals,score:homeGoals>awayGoals?1:homeGoals<awayGoals?0:0.5,at:'2026-01-01',order:1}]).find(p=>p.id==='h').lastChange;
+  assert.ok(rating(4,0)>rating(2,0));
+  assert.ok(rating(2,0)>rating(2,1));
+  assert.equal(rating(0,0),0);
   const db=testDb=database();
   const profile=name=>JSON.stringify({displayName:name,teams:[{kind:'football',name:'Arsenal'}],primary:null,platforms:['PC'],timezone:'UTC',psnId:'',eaId:name+'_ea'});
   for(const [id,owner] of [['owner',1],['a',0],['b',0],['c',0]]){
@@ -57,7 +63,7 @@ try{
   assert.equal(getFriendlies(actor('c')).invitations.find(i=>i.id===cancelId).status,'cancelled');
   db.prepare('UPDATE friendly_elo_start SET started_at=? WHERE id=1').run(new Date(Date.now()-3*86400000).toISOString());
   const playedLocal=new Date(Date.now()-86400000).toISOString().slice(0,16);
-  const playedId=friendlyAction(actor('owner'),{action:'log',asPlayerId:'a',opponentId:'b',local:playedLocal,myGoals:2,theirGoals:1,myStars:4,theirStars:3}).id;
+  const playedId=friendlyAction(actor('owner'),{action:'log',asPlayerId:'a',opponentId:'b',local:playedLocal,myGoals:2,theirGoals:1,myStars:4,theirStars:3.5}).id;
   assert.equal(getFriendlies(actor('owner')).invitations.find(i=>i.id===playedId).elo?.state,'counts');
   assert.equal(getFriendlies(actor('c')).invitations.some(i=>i.id===playedId),false);
   assert.throws(()=>friendlyAction(actor('a'),{action:'cancel',id:playedId,version:1,message:'Incorrect game'}),/Only the organizer/);
@@ -74,7 +80,7 @@ try{
   friendlyAction(actor('owner'),{action:'cancel',id:otherPlayed,version:1,message:'Entered by mistake'});
   assert.equal(getFriendlies(actor('c')).invitations.find(i=>i.id===otherPlayed).status,'cancelled');
   const correctedLocal=new Date(Date.now()-2*86400000).toISOString().slice(0,16);
-  const editId=friendlyAction(actor('owner'),{action:'log',asPlayerId:'a',opponentId:'c',local:correctedLocal,myGoals:1,theirGoals:0,myStars:3,theirStars:4}).id;
+  const editId=friendlyAction(actor('owner'),{action:'log',asPlayerId:'a',opponentId:'c',local:correctedLocal,myGoals:1,theirGoals:0,myStars:3.5,theirStars:4}).id;
   const editTime=new Date(Date.now()-2*86400000+60000).toISOString().slice(0,16);
   const correction={action:'admin-result',id:editId,version:1,local:editTime,firstGoals:2,secondGoals:3,firstStars:4.5,secondStars:5,reason:'Corrected from match notes'};
   assert.throws(()=>friendlyAction(actor('b'),correction),/Invitation not found/);
@@ -87,6 +93,11 @@ try{
   assert.equal(edited.elo.state,'counts');
   assert.ok(getFriendlies(actor('owner')).events.some(e=>e.invitationId===editId&&e.action==='corrected'&&e.reason==='Corrected from match notes'));
   assert.throws(()=>friendlyAction(actor('owner'),correction),/changed/);
+  const ultimateLocal=new Date(Date.now()-3*86400000+60000).toISOString().slice(0,16);
+  assert.throws(()=>friendlyAction(actor('owner'),{action:'log',mode:'clubs',asPlayerId:'b',opponentId:'c',local:ultimateLocal,myGoals:2,theirGoals:0,myStars:3,theirStars:4}),/at least 3.5/);
+  const ultimateId=friendlyAction(actor('owner'),{action:'log',mode:'ultimate',asPlayerId:'b',opponentId:'c',local:ultimateLocal,myGoals:2,theirGoals:0,myStars:null,theirStars:null}).id;
+  assert.equal(getFriendlies(actor('owner')).invitations.find(i=>i.id===ultimateId).mode,'ultimate');
+  assert.equal(getFriendlies(actor('owner')).invitations.find(i=>i.id===ultimateId).elo.state,'counts');
   assert.throws(()=>friendlyAction(actor('owner'),{action:'log',opponentId:'a',local:playedLocal,myGoals:2,theirGoals:1,myStars:null,theirStars:null}),/linked Elo player/);
   const legacyId='legacy-admin-log';
   db.prepare("INSERT INTO friendly_invitations(id,inviter_id,invitee_id,pair_key,status,proposed_at,proposed_local,proposer_timezone,proposed_by,turn_id,created_at,updated_at) VALUES(?,'owner','a','a|owner','accepted',?,?,'UTC','owner',NULL,?,?)")

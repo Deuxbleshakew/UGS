@@ -28,6 +28,8 @@ export function RulesGuide({state}:{state:AppState|null}){
       <ul className="gh-list">
         <li>Elo ratings are only for real, registered players. Every official player result moves the ratings.</li>
         <li>League results are weighted by club stars: beating a higher-rated club is worth more Elo, beating a lower-rated one less, and losing with the better club costs more. Clubs without stars count as equal.</li>
+        <li>A win earns more Elo for extra goals scored and a larger winning margin, plus a clean-sheet bonus. The scoreline bonus is capped; draws have none. Rated clubs start at 3.5 stars.</li>
+        <li>Friendlies can be played with clubs or Ultimate Team. Ultimate Team results have no club-star adjustment. Agreed friendly scores count for Elo at half weight.</li>
         <li>The player qualification playoff switches on automatically once <b>more than 13 players</b> have joined.</li>
         <li>The top five by Elo qualify directly. Everyone else is seeded and plays two legs, home and away. Rounds are drawn automatically as soon as every tie is settled.</li>
       </ul></section>
