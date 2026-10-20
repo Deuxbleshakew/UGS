@@ -24,13 +24,6 @@ const icons: Record<UgsView, LucideIcon> = {
   tiquicia: Shield, profile: UserRound, admin: ShieldCheck, review: FileCheck2, roster: Users, settings: Settings2,
 };
 const existingViews: readonly UgsView[] = ['overview', 'playoffs', 'bracket', 'teamplayoffs', 'squad', 'fixtures', 'standings', 'clubs', 'statistics', 'awards', 'elo', 'review', 'roster', 'settings'];
-const competitionPath: readonly {view: UgsView; label: string}[] = [
-  {view: 'overview', label: 'Start'},
-  {view: 'playoffs', label: 'Qualify'},
-  {view: 'fixtures', label: 'Matches'},
-  {view: 'standings', label: 'Table'},
-  {view: 'bracket', label: 'Knockout'},
-];
 
 export default function TournamentApp() {
   const [state, setState] = useState<AppState | null>(null);
@@ -177,7 +170,6 @@ export default function TournamentApp() {
         {!loading && state && <>
           {view === 'home' && (state.profile?.participation === 'no' || state.profile?.participation === 'pending') && <p className="notice viewer-note" role="status">You are following as a viewer. More for followers is coming soon. Want to play? Ask to take part in My Profile.</p>}
           {view !== 'home' && <div className="page-heading"><div><div className="eyebrow">{competition ? 'UGS / CLUB CHAMPIONS' : inAdmin ? 'UGS / OWNER WORKSPACE' : 'UNION GAMING SOCIETY'}</div><h1>{view === 'overview' ? 'Club Champions' : definition.label}</h1><p>{definition.description}</p></div>{existing && !denied && <div className="heading-actions">{ready && admin && <button className="btn secondary" onClick={() => download(view === 'awards' ? 'awards' : view === 'standings' ? 'clubs' : 'matches')}><ArrowDownToLine size={16} />Export CSV</button>}{(admin || (!ready && owner)) && <button className="btn primary" onClick={() => open('fixture')}><Plus size={17} />{ready ? 'Add fixture' : 'Create tournament'}</button>}</div>}</div>}
-          {competition && ready && <nav className="ugs-competition-path" aria-label="Club Champions path"><span className="ugs-path-caption">Follow the competition</span>{competitionPath.map(({view:step,label},index) => <a key={step} href={viewHref(step)} onClick={e => follow(e, step)} className={view === step ? 'active' : ''} aria-current={view === step ? 'page' : undefined}><small>{index + 1}</small>{label}</a>)}</nav>}
           {existing && !denied && (admin || owner) && <div className="ugs-workspace-strip"><div><span className="eyebrow">SELECTED TOURNAMENT</span><strong>{tournament?.name ?? 'No tournament selected'}</strong></div><button className="btn secondary" onClick={() => open('switch')}><Shield size={16} />Your tournaments <ChevronDown size={15} /></button></div>}
           {(view==='fixtures'||view==='overview')&&<MatchweekPanel key={tournament?.id} state={state} onRefresh={()=>refresh(tournament?.id)}/>}
           {owner&&view==='settings'&&tournament&&<ScheduleSettings key={tournament.id} tid={tournament.id} weeks={(state?.matchweeks?.weeks??[]).map(w=>w.week)} timezone={state?.profile?.data.timezone}/>}

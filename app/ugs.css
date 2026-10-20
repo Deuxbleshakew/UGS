@@ -52,13 +52,6 @@ textarea:focus-visible, summary:focus-visible { outline-color: #467bd7; }
 .breadcrumb strong { color: #1d355c; }
 .breadcrumb a:hover { text-decoration: underline; }
 .ugs-competition-crumb { display: inline-flex; align-items: center; gap: 9px; }
-.ugs-competition-path { display: flex; align-items: center; gap: 7px; overflow-x: auto; padding: 2px 1px 12px; margin: -9px 0 18px; scrollbar-width: thin; }
-.ugs-path-caption { flex: 0 0 auto; margin-right: 5px; color: var(--muted); font-size: 11px; font-weight: 700; }
-.ugs-competition-path a { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 7px; min-height: 38px; padding: 7px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--paper, #fff); color: var(--ink); font-size: 11px; font-weight: 650; white-space: nowrap; }
-.ugs-competition-path a:hover, .ugs-competition-path a:focus-visible { border-color: #6f91c5; background: var(--ugs-soft, #e9f0ff); }
-.ugs-competition-path a.active { border-color: var(--ugs-blue); background: var(--ugs-blue); color: #fff; }
-.ugs-competition-path a small { display: inline-grid; place-items: center; width: 19px; height: 19px; border-radius: 50%; background: #dfe8f6; color: #173e7a; font-size: 10px; }
-.ugs-competition-path a.active small { background: #fff; color: #173e7a; }
 .private-label { color: #5c6c84; }
 .eyebrow, .page-heading p { color: #626f86; }
 .page-heading h1 { font-weight: 750; }
@@ -212,7 +205,6 @@ textarea:focus-visible, summary:focus-visible { outline-color: #467bd7; }
   .auth-page.ugs-auth { gap: 45px; padding-inline: 40px; }
 }
 @media (max-width: 900px) {
-  .ugs-path-caption { display: none; }
   .ugs-hero { grid-template-columns: 1fr; }
   .ugs-hero-copy { padding: 32px; }
   .ugs-hero h1 { font-size: 39px; }
