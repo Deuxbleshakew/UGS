@@ -73,6 +73,20 @@ try{
   assert.ok(getFriendlies(actor('owner')).invitations.some(i=>i.id===otherPlayed));
   friendlyAction(actor('owner'),{action:'cancel',id:otherPlayed,version:1,message:'Entered by mistake'});
   assert.equal(getFriendlies(actor('c')).invitations.find(i=>i.id===otherPlayed).status,'cancelled');
+  const correctedLocal=new Date(Date.now()-2*86400000).toISOString().slice(0,16);
+  const editId=friendlyAction(actor('owner'),{action:'log',asPlayerId:'a',opponentId:'c',local:correctedLocal,myGoals:1,theirGoals:0,myStars:3,theirStars:4}).id;
+  const editTime=new Date(Date.now()-2*86400000+60000).toISOString().slice(0,16);
+  const correction={action:'admin-result',id:editId,version:1,local:editTime,firstGoals:2,secondGoals:3,firstStars:4.5,secondStars:5,reason:'Corrected from match notes'};
+  assert.throws(()=>friendlyAction(actor('b'),correction),/Invitation not found/);
+  friendlyAction(actor('owner'),correction);
+  const edited=getFriendlies(actor('owner')).invitations.find(i=>i.id===editId);
+  assert.equal(edited.version,2);
+  assert.equal(edited.result.first.goals,2);
+  assert.equal(edited.result.second.goals,3);
+  assert.equal(edited.result.second.stars,5);
+  assert.equal(edited.elo.state,'counts');
+  assert.ok(getFriendlies(actor('owner')).events.some(e=>e.invitationId===editId&&e.action==='corrected'&&e.reason==='Corrected from match notes'));
+  assert.throws(()=>friendlyAction(actor('owner'),correction),/changed/);
   assert.throws(()=>friendlyAction(actor('owner'),{action:'log',opponentId:'a',local:playedLocal,myGoals:2,theirGoals:1,myStars:null,theirStars:null}),/linked Elo player/);
   const legacyId='legacy-admin-log';
   db.prepare("INSERT INTO friendly_invitations(id,inviter_id,invitee_id,pair_key,status,proposed_at,proposed_local,proposer_timezone,proposed_by,turn_id,created_at,updated_at) VALUES(?,'owner','a','a|owner','accepted',?,?,'UTC','owner',NULL,?,?)")

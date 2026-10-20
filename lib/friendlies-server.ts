@@ -12,7 +12,7 @@ import {evaluateFriendlies,friendlyPlayerIds} from './friendly-elo';
 import {zonedLocalToUtc,zoneMessages} from './timezone';
 
 // Friendly invitations. A friendly is not a fixture: it has no standings, awards or proof. Once both players agree on the score it counts for Elo at half weight (see friendly-elo.ts).
-// Players see their own friendlies. The owner can review and cancel any friendly.
+// Players see their own friendlies. The owner can review, correct and cancel any friendly.
 type Actor={userId:string;displayName:string};
 type Inv={id:string;inviter_id:string;invitee_id:string;pair_key:string;status:string;proposed_at:string;proposed_local:string;proposer_timezone:string;proposed_by:string;turn_id:string|null;message:string|null;created_at:string;updated_at:string;version:number};
 /** Safety limit on outgoing pending invitations per person (abuse protection, not a league rule). */
@@ -96,6 +96,7 @@ const actionSchema=z.discriminatedUnion('action',[
   z.object({action:z.literal('cancel'),id:z.string(),version:z.number().int(),message:note}),
   z.object({action:z.literal('log'),opponentId:z.string().min(1).max(100),asPlayerId:z.string().min(1).max(100).optional(),local,myGoals:z.number().int().min(0).max(99),theirGoals:z.number().int().min(0).max(99),myStars:starValue,theirStars:starValue,message:note}),
   z.object({action:z.literal('reassign'),id:z.string(),version:z.number().int(),firstId:z.string().min(1).max(100),secondId:z.string().min(1).max(100),reason:z.string().trim().min(3).max(500)}),
+  z.object({action:z.literal('admin-result'),id:z.string(),version:z.number().int(),local,firstGoals:z.number().int().min(0).max(99),secondGoals:z.number().int().min(0).max(99),firstStars:starValue,secondStars:starValue,reason:z.string().trim().min(3).max(500)}),
   z.object({action:z.literal('result'),id:z.string(),myGoals:z.number().int().min(0).max(99),theirGoals:z.number().int().min(0).max(99),myStars:starValue,theirStars:starValue}),
 ]);
 type Late={fail:string;status:number};
@@ -182,11 +183,24 @@ export function friendlyAction(actor:Actor,input:unknown){
     const organizer=inv?d.prepare('SELECT created_by,first_response FROM friendly_organizer_proposals WHERE invitation_id=?').get(inv.id) as {created_by:string;first_response:number}|undefined:undefined;
     const participant=!!inv&&(inv.inviter_id===actor.userId||inv.invitee_id===actor.userId);
     const isOwner=profileOf(actor.userId)?.a.owner===1;
-    if(!inv||(!participant&&!(isOwner&&(data.action==='cancel'||data.action==='reassign'))))return fail('Invitation not found.',404);
+    if(!inv||(!participant&&!(isOwner&&(data.action==='cancel'||data.action==='reassign'||data.action==='admin-result'))))return fail('Invitation not found.',404);
+    if(data.action==='admin-result'){
+      if(!isOwner)fail('Only the organizer can correct another player’s result.',403);
+      if(data.version!==inv.version)fail('This match changed. Refresh before correcting it.',409);
+      if(inv.status!=='accepted'||new Date(inv.proposed_at).getTime()>Date.now())fail('Only a played, accepted friendly can be corrected.',409);
+      const at=toUtc(data.local,me.timezone);
+      if(new Date(at).getTime()>Date.now())fail('A played match cannot have a future date.',409);
+      if(d.prepare("SELECT 1 FROM friendly_invitations WHERE id<>? AND pair_key=? AND status='accepted' AND proposed_at=?").get(inv.id,inv.pair_key,at))fail('Another game between these players is already recorded at that time.',409);
+      d.prepare('UPDATE friendly_invitations SET proposed_at=?,proposed_local=?,proposer_timezone=?,version=version+1,updated_at=? WHERE id=?')
+        .run(at,data.local,me.timezone,nowIso(),inv.id);
+      event(d,inv.id,who,'corrected',data.reason,at);
+      event(d,inv.id,who,'result',JSON.stringify({inviter:{goals:data.firstGoals,stars:data.firstStars},invitee:{goals:data.secondGoals,stars:data.secondStars}}),at);
+      return {ok:true};
+    }
     if(data.action==='reassign'){
       if(!isOwner)fail('Only the organizer can correct logged players.',403);
       if(data.version!==inv.version)fail('This match changed. Refresh before correcting it.',409);
-      if(inv.status!=='accepted'||!d.prepare("SELECT 1 FROM friendly_events WHERE invitation_id=? AND action='logged'").get(inv.id))fail('Only a played game logged after the fact can have its players corrected.',409);
+      if(inv.status!=='accepted'||new Date(inv.proposed_at).getTime()>Date.now())fail('Only a played, accepted friendly can have its players corrected.',409);
       if(data.firstId===data.secondId)fail('Choose two different players.');
       if(data.firstId===inv.inviter_id&&data.secondId===inv.invitee_id)fail('Choose a different player to correct.');
       if(!profileOf(data.firstId)||!profileOf(data.secondId))fail('Choose two registered player accounts.',404);
@@ -266,7 +280,7 @@ export function getFriendlies(actor:Actor){
   const name=(id:string)=>eligibility(id).name||'Player';
   const organized=rows.length?d.prepare(`SELECT invitation_id,first_response FROM friendly_organizer_proposals WHERE invitation_id IN (${rows.map(()=>'?').join(',')})`).all(...rows.map(r=>r.id)) as {invitation_id:string;first_response:number}[]:[];
   const organizedMap=new Map(organized.map(r=>[r.invitation_id,r.first_response]));
-  const invitationsBase=rows.map(i=>{const organizerView=i.inviter_id!==actor.userId&&i.invitee_id!==actor.userId,other=i.inviter_id===actor.userId?i.invitee_id:i.inviter_id;return {id:i.id,status:i.status,proposedAt:i.proposed_at,proposedLocal:i.proposed_local,proposerTimezone:i.proposer_timezone,message:i.message,version:i.version,createdAt:i.created_at,updatedAt:i.updated_at,direction:i.inviter_id===actor.userId?'sent':'received',myTurn:i.turn_id===actor.userId,proposedByMe:i.proposed_by===actor.userId,otherName:name(other),otherId:other,otherAvatar:avatarVersion(other),firstId:i.inviter_id,secondId:i.invitee_id,firstName:name(i.inviter_id),organizerProposal:organizedMap.has(i.id),organizerView,firstResponse:!!organizedMap.get(i.id),waitingFor:i.status==='pending'?name(i.turn_id??''):null};});
+  const invitationsBase=rows.map(i=>{const organizerView=i.inviter_id!==actor.userId&&i.invitee_id!==actor.userId,other=i.inviter_id===actor.userId?i.invitee_id:i.inviter_id;return {id:i.id,status:i.status,proposedAt:i.proposed_at,proposedLocal:i.proposed_local,proposerTimezone:i.proposer_timezone,message:i.message,version:i.version,createdAt:i.created_at,updatedAt:i.updated_at,direction:i.inviter_id===actor.userId?'sent':'received',myTurn:i.turn_id===actor.userId,proposedByMe:i.proposed_by===actor.userId,otherName:name(other),otherId:other,otherAvatar:avatarVersion(other),firstId:i.inviter_id,secondId:i.invitee_id,firstName:name(i.inviter_id),secondName:name(i.invitee_id),firstAvatar:avatarVersion(i.inviter_id),secondAvatar:avatarVersion(i.invitee_id),organizerProposal:organizedMap.has(i.id),organizerView,firstResponse:!!organizedMap.get(i.id),waitingFor:i.status==='pending'?name(i.turn_id??''):null};});
   const ids=rows.map(r=>r.id),marks=ids.map(()=>'?').join(',');
   const events=ids.length?d.prepare(`SELECT id,invitation_id AS invitationId,actor_name AS actorName,at,action,reason,proposed_at AS proposedAt FROM friendly_events WHERE invitation_id IN (${marks}) AND action<>'result' ORDER BY at,rowid`).all(...ids):[];
   const resultRows=ids.length?d.prepare(`SELECT invitation_id AS id,actor_name AS actorName,at,reason FROM friendly_events WHERE invitation_id IN (${marks}) AND action='result' ORDER BY at,rowid`).all(...ids) as {id:string;actorName:string;at:string;reason:string}[]:[];
@@ -278,7 +292,7 @@ export function getFriendlies(actor:Actor){
     const r=results.get(i.id),mine=i.organizerView||rows.find(x=>x.id===i.id)!.inviter_id===actor.userId;
     const ev=eloStates.get(i.id);
     const missing=[i.firstId,i.secondId].filter(id=>!linked.has(id)).map(id=>name(id));
-    return {...i,logged:loggedIds.has(i.id),ratingIssue:i.status==='accepted'&&ev&&ev.state!=='earlier'&&missing.length?`Not in Elo: ${missing.join(' and ')} ${missing.length===1?'has':'have'} no linked player profile.`:null,elo:ev?{state:ev.state,canConfirm:ev.state==='waiting'&&ev.needs===actor.userId}:null,result:r?{mine:mine?r.inviter:r.invitee,theirs:mine?r.invitee:r.inviter,by:r.by,at:r.at}:null};
+    return {...i,logged:loggedIds.has(i.id),ratingIssue:i.status==='accepted'&&ev&&ev.state!=='earlier'&&missing.length?`Not in Elo: ${missing.join(' and ')} ${missing.length===1?'has':'have'} no linked player profile.`:null,elo:ev?{state:ev.state,canConfirm:ev.state==='waiting'&&ev.needs===actor.userId}:null,result:r?{mine:mine?r.inviter:r.invitee,theirs:mine?r.invitee:r.inviter,first:r.inviter,second:r.invitee,by:r.by,at:r.at}:null};
   });
   const directory=me.ok?(d.prepare('SELECT id FROM accounts WHERE id<>?').all(actor.userId) as {id:string}[]).map(a=>({id:a.id,e:eligibility(a.id)})).filter(x=>(isOwner||x.e.ok)&&x.e.name).map(x=>({id:x.id,name:x.e.name,ranked:linked.has(x.id),eligible:x.e.ok,reason:x.e.reason??null})).sort((a,b)=>a.name.localeCompare(b.name)):[];
   // Owner only: explain why someone is missing from the invite list, so an empty dropdown is never a mystery.

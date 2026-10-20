@@ -1,18 +1,18 @@
 'use client';
 import {useCallback,useEffect,useState} from 'react';
-import {formatInZone,validTimezone,zonedLocalToUtc,zoneMessages} from '@/lib/timezone';
+import {formatInZone,validTimezone,zonedLocalToUtc,utcToZonedLocal,zoneMessages} from '@/lib/timezone';
 import {api} from './ui';
 import {Avatar} from './avatar-picker';
 import {viewHref} from './ugs-navigation';
 
-type Invitation={elo?:{state:'counts'|'waiting'|'earlier'|'none';canConfirm:boolean}|null;logged?:boolean;ratingIssue?:string|null;result?:Result|null;id:string;status:string;proposedAt:string;proposedLocal:string;proposerTimezone:string;message:string|null;version:number;direction:'sent'|'received';myTurn:boolean;proposedByMe:boolean;otherName:string;otherId:string;otherAvatar:number|null;firstId:string;secondId:string;firstName?:string;organizerProposal?:boolean;organizerView?:boolean;firstResponse?:boolean;waitingFor?:string|null};
+type Invitation={elo?:{state:'counts'|'waiting'|'earlier'|'none';canConfirm:boolean}|null;logged?:boolean;ratingIssue?:string|null;result?:Result|null;id:string;status:string;proposedAt:string;proposedLocal:string;proposerTimezone:string;message:string|null;version:number;direction:'sent'|'received';myTurn:boolean;proposedByMe:boolean;otherName:string;otherId:string;otherAvatar:number|null;firstId:string;secondId:string;firstName:string;secondName:string;firstAvatar:number|null;secondAvatar:number|null;organizerProposal?:boolean;organizerView?:boolean;firstResponse?:boolean;waitingFor?:string|null};
 type Ev={id:string;invitationId:string;actorName:string;at:string;action:string;reason:string|null;proposedAt:string|null};
 type Side={goals:number;stars:number|null};
-type Result={mine:Side;theirs:Side;by:string;at:string};
+type Result={mine:Side;theirs:Side;first:Side;second:Side;by:string;at:string};
 type DirectoryPlayer={id:string;name:string;ranked:boolean;eligible:boolean;reason:string|null};
 type Data={unavailable?:{name:string;reason:string}[];unlinkedProfiles?:{id:string;name:string}[];now:string;me:{id:string;name:string;eligible:boolean;reason:string|null;timezone:string;maxPending:number;owner?:boolean;ranked:boolean};invitations:Invitation[];events:Ev[];directory:DirectoryPlayer[]};
 const statusText:Record<string,string>={pending:'Waiting for an answer',accepted:'Accepted',declined:'Declined',cancelled:'Cancelled',expired:'Expired'};
-const eventText:Record<string,string>={logged:'Logged after the fact',reassigned:'Players corrected',invited:'Invited',organized:'Organizer proposed',agreed:'First player accepted',countered:'Counter-proposed',accepted:'Accepted',declined:'Declined',cancelled:'Cancelled',expired:'Expired'};
+const eventText:Record<string,string>={logged:'Logged after the fact',reassigned:'Players corrected',corrected:'Result corrected',invited:'Invited',organized:'Organizer proposed',agreed:'First player accepted',countered:'Counter-proposed',accepted:'Accepted',declined:'Declined',cancelled:'Cancelled',expired:'Expired'};
 
 const STAR_OPTIONS=Array.from({length:10},(_,i)=>(i+1)/2);
 function LinkAccountForm({person,data,onDone}:{person:DirectoryPlayer;data:Data;onDone:()=>void}){
@@ -43,6 +43,22 @@ function ResultBox({inv,busy,onSave}:{inv:Invitation;busy:boolean;onSave:(body:R
       <p className="fine-print">Counts for Elo at half weight once both players agree on the score. No standings or awards.</p>
     </div>}
   </div>;
+}
+function AdminResultEditor({inv,timezone,busy,onSave}:{inv:Invitation;timezone:string;busy:boolean;onSave:(body:Record<string,unknown>)=>void}){
+  const [when,setWhen]=useState(utcToZonedLocal(inv.proposedAt,timezone));
+  const [firstGoals,setFirstGoals]=useState(String(inv.result?.first.goals??'')),[secondGoals,setSecondGoals]=useState(String(inv.result?.second.goals??''));
+  const [firstStars,setFirstStars]=useState(inv.result?.first.stars==null?'':String(inv.result.first.stars)),[secondStars,setSecondStars]=useState(inv.result?.second.stars==null?'':String(inv.result.second.stars));
+  const [reason,setReason]=useState('');
+  const number=(value:string)=>value.replace(/\D/g,'').slice(0,2);
+  return <details className="schedule-editor admin-friendly-edit"><summary>{inv.result?'Edit result and date':'Add result'}</summary><div className="sched-form">
+    <label className="field">Played at <small>{timezone}</small><input type="datetime-local" value={when} onChange={event=>setWhen(event.target.value)} disabled={busy}/></label>
+    <label className="field">{inv.firstName} goals<input inputMode="numeric" maxLength={2} value={firstGoals} onChange={event=>setFirstGoals(number(event.target.value))} disabled={busy}/></label>
+    <label className="field">{inv.secondName} goals<input inputMode="numeric" maxLength={2} value={secondGoals} onChange={event=>setSecondGoals(number(event.target.value))} disabled={busy}/></label>
+    <label className="field">{inv.firstName} team stars<select value={firstStars} onChange={event=>setFirstStars(event.target.value)} disabled={busy}><option value="">Not set</option>{STAR_OPTIONS.map(stars=><option value={stars} key={stars}>{stars} ★</option>)}</select></label>
+    <label className="field">{inv.secondName} team stars<select value={secondStars} onChange={event=>setSecondStars(event.target.value)} disabled={busy}><option value="">Not set</option>{STAR_OPTIONS.map(stars=><option value={stars} key={stars}>{stars} ★</option>)}</select></label>
+    <label className="field">Reason for change<input value={reason} onChange={event=>setReason(event.target.value)} maxLength={500} placeholder="What needed correction?" disabled={busy}/></label>
+    <button type="button" className="btn primary" disabled={busy||!when||firstGoals===''||secondGoals===''||reason.trim().length<3} onClick={()=>onSave({action:'admin-result',id:inv.id,version:inv.version,local:when,firstGoals:Number(firstGoals),secondGoals:Number(secondGoals),firstStars:firstStars===''?null:Number(firstStars),secondStars:secondStars===''?null:Number(secondStars),reason:reason.trim()})}>Save correction</button>
+  </div></details>;
 }
 /** Register a friendly that was already played: no invitation, the score goes in right away. */
 function LogForm({data,timezone,onDone}:{data:Data;timezone?:string;onDone:()=>void}){
@@ -100,8 +116,8 @@ function CorrectLoggedPlayers({inv,data,busy,onSave,onLinked}:{inv:Invitation;da
   const [first,setFirst]=useState(inv.firstId===data.me.id?(data.me.ranked?data.me.id:''):inv.firstId),[second,setSecond]=useState(inv.secondId),[reason,setReason]=useState('');
   const options=[...(data.me.ranked?[{id:data.me.id,name:'You',ranked:true,eligible:true,reason:null}]:[]),...data.directory];
   const missingLink=[data.directory.find(p=>p.id===first),data.directory.find(p=>p.id===second)].filter((p):p is DirectoryPlayer=>!!p&&!p.ranked);
-  return <details className="schedule-editor"><summary>Correct players for Elo</summary><div className="sched-form">
-    <p className="fine-print">Use this if a logged match was assigned to the admin login or the wrong player. The score stays in the same order; the correction is recorded in History.</p>
+  return <details className="schedule-editor"><summary>Change players</summary><div className="sched-form">
+    <p className="fine-print">Correct either player without swapping their score. The change is recorded in this game’s activity.</p>
     <label className="field">First player<select value={first} onChange={e=>setFirst(e.target.value)}><option value="">Choose a player</option>{options.map(p=><option key={p.id} value={p.id}>{p.name}{p.ranked?'':' · Link for Elo'}</option>)}</select></label>
     <label className="field">Second player<select value={second} onChange={e=>setSecond(e.target.value)}><option value="">Choose a player</option>{options.filter(p=>p.id!==first).map(p=><option key={p.id} value={p.id}>{p.name}{p.ranked?'':' · Link for Elo'}</option>)}</select></label>
     {missingLink.map(p=><LinkAccountForm key={p.id} person={p} data={data} onDone={onLinked}/>)}
@@ -112,6 +128,7 @@ function CorrectLoggedPlayers({inv,data,busy,onSave,onLinked}:{inv:Invitation;da
 export default function Friendlies({timezone,mode='active'}:{timezone?:string;mode?:'active'|'history'}){
   const [data,setData]=useState<Data|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false);
   const [who,setWho]=useState(''),[when,setWhen]=useState(''),[message,setMessage]=useState(''),[counterFor,setCounterFor]=useState<string|null>(null);
+  const [historyQuery,setHistoryQuery]=useState(''),[historyFilter,setHistoryFilter]=useState<'played'|'needs-score'|'voided'|'all'>('played');
   const zone=timezone&&validTimezone(timezone)?timezone:Intl.DateTimeFormat().resolvedOptions().timeZone;
   const load=useCallback(async()=>{try{setData(await api<Data>('friendlies'));}catch(e){setError((e as Error).message);}},[]);
   useEffect(()=>{void load();},[load]);
@@ -161,6 +178,27 @@ export default function Friendlies({timezone,mode='active'}:{timezone?:string;mo
       {mode==='history'&&events.length>0&&<details className="sched-history"><summary>Activity ({events.length})</summary><ul>{events.map(e=><li key={e.id}><b>{eventText[e.action]??e.action}</b>{e.proposedAt&&<> · {formatInZone(e.proposedAt,zone)}</>} <span className="fine-print">{e.actorName} · {formatInZone(e.at,zone)}{e.reason?` · ${e.reason}`:''}</span></li>)}</ul></details>}
     </div>;
   };
+  if(mode==='history'&&data.me.owner){
+    const counts={played:history.filter(i=>i.status==='accepted'&&!!i.result).length,'needs-score':history.filter(i=>i.status==='accepted'&&!i.result).length,voided:history.filter(i=>i.status==='cancelled'&&!!i.result).length,all:history.length};
+    const matches=history.filter(i=>`${i.firstName} ${i.secondName}`.toLocaleLowerCase().includes(historyQuery.trim().toLocaleLowerCase()))
+      .filter(i=>historyFilter==='all'||historyFilter==='played'&&i.status==='accepted'&&!!i.result||historyFilter==='needs-score'&&i.status==='accepted'&&!i.result||historyFilter==='voided'&&i.status==='cancelled'&&!!i.result)
+      .sort((a,b)=>new Date(b.proposedAt).getTime()-new Date(a.proposedAt).getTime());
+    const activity=(i:Invitation)=>data.events.filter(e=>e.invitationId===i.id);
+    return <section className="panel friendlies-panel admin-friendlies-history" aria-labelledby="friendly-history-heading">
+      <h2 id="friendly-history-heading">Friendly match history</h2>
+      <p className="fine-print">Review every game, correct its players, score, stars or date, and void an incorrect result. Changes to rated matches update Elo.</p>
+      {error&&<p className="inline-error" role="alert">{error}</p>}
+      <div className="admin-friendly-toolbar"><label className="field">Find a match<input type="search" value={historyQuery} onChange={e=>setHistoryQuery(e.target.value)} placeholder="Search either player"/></label><div className="admin-friendly-filters" role="group" aria-label="Match status">{([['played','Played'],['needs-score','Needs score'],['voided','Voided'],['all','All']] as const).map(([key,label])=><button key={key} type="button" className={'btn '+(historyFilter===key?'primary':'secondary')} aria-pressed={historyFilter===key} onClick={()=>setHistoryFilter(key)}>{label} <span>{counts[key]}</span></button>)}</div></div>
+      {matches.length?<div className="admin-friendly-list">{matches.map(i=>{const events=activity(i),rated=i.status==='cancelled'?'Voided':i.ratingIssue?'Not in Elo':i.elo?.state==='counts'?'Counts for Elo':i.elo?.state==='waiting'?'Awaiting score confirmation':i.elo?.state==='earlier'?'Before Elo started':'No Elo score';return <article className="admin-friendly-match" key={i.id}>
+        <div className="admin-friendly-main"><div className="admin-friendly-side"><Avatar id={i.firstId} name={i.firstName} version={i.firstAvatar} size={36}/><strong>{i.firstName}</strong></div><div className="admin-friendly-score" aria-label={i.result?`${i.result.first.goals} to ${i.result.second.goals}`:'No score'}>{i.result?<><b>{i.result.first.goals}</b><span>–</span><b>{i.result.second.goals}</b></>:<span>— : —</span>}</div><div className="admin-friendly-side admin-friendly-side-second"><Avatar id={i.secondId} name={i.secondName} version={i.secondAvatar} size={36}/><strong>{i.secondName}</strong></div></div>
+        <div className="admin-friendly-meta"><span>{formatInZone(i.proposedAt,zone)}</span><span className={'admin-friendly-state '+(i.status==='cancelled'?'is-void':'')}>{i.status==='accepted'?'Played':statusText[i.status]??i.status}</span><span>{rated}</span>{i.result&&(i.result.first.stars!=null||i.result.second.stars!=null)&&<span>Teams: {i.result.first.stars??'—'} ★ / {i.result.second.stars??'—'} ★</span>}</div>
+        {i.ratingIssue&&<p className="notice warning">{i.ratingIssue}</p>}
+        {i.message&&<p className="fine-print">Note: {i.message}</p>}
+        {i.status==='accepted'&&<div className="admin-friendly-actions"><AdminResultEditor key={i.id+':result:'+i.version} inv={i} timezone={zone} busy={busy} onSave={body=>void send(body)}/>{i.result&&<CorrectLoggedPlayers key={i.id+':players:'+i.version} inv={i} data={data} busy={busy} onSave={body=>void send(body)} onLinked={()=>void load()}/>}<button type="button" className="btn secondary" disabled={busy} onClick={()=>{const reason=window.prompt(`Void ${i.firstName} vs ${i.secondName}? The result will stop counting toward Elo. Enter a reason:`);if(reason&&reason.trim().length>=3)void send({action:'cancel',id:i.id,version:i.version,message:reason.trim()});}}>Void match</button></div>}
+        {events.length>0&&<details className="sched-history"><summary>Activity ({events.length})</summary><ul>{events.map(e=><li key={e.id}><b>{eventText[e.action]??e.action}</b> <span className="fine-print">{e.actorName} · {formatInZone(e.at,zone)}{e.reason?` · ${e.reason}`:''}</span></li>)}</ul></details>}
+      </article>;})}</div>:<p className="fine-print">No matches found for this filter.</p>}
+    </section>;
+  }
   if(mode==='history')return <section className="panel friendlies-panel"><h2>Friendly match history</h2><p className="fine-print">Played, cancelled and expired friendlies are saved here. Confirm scores or correct a logged result from its match card.</p>{error&&<p className="inline-error" role="alert">{error}</p>}{history.length?history.map(card):<p className="fine-print">No past friendlies yet.</p>}</section>;
   return <section className="panel friendlies-panel" aria-labelledby="friendlies-heading">
     <h2 id="friendlies-heading" className="visually-hidden">Friendlies</h2>
