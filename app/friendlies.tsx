@@ -1,5 +1,6 @@
 'use client';
-import {useCallback,useEffect,useState} from 'react';
+import {useCallback,useEffect,useRef,useState} from 'react';
+import {ArrowRight,CalendarPlus,ClipboardCheck,Clock3,Gamepad2,History,Plus,Swords,Users,X} from 'lucide-react';
 import {formatInZone,validTimezone,zonedLocalToUtc,utcToZonedLocal,zoneMessages} from '@/lib/timezone';
 import {api} from './ui';
 import {Avatar} from './avatar-picker';
@@ -132,10 +133,13 @@ function CorrectLoggedPlayers({inv,data,busy,onSave,onLinked}:{inv:Invitation;da
 export default function Friendlies({timezone,mode='active'}:{timezone?:string;mode?:'active'|'history'}){
   const [data,setData]=useState<Data|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false);
   const [who,setWho]=useState(''),[when,setWhen]=useState(''),[message,setMessage]=useState(''),[gameMode,setGameMode]=useState<'clubs'|'ultimate'>('clubs'),[counterFor,setCounterFor]=useState<string|null>(null);
+  const [activeAction,setActiveAction]=useState<'invite'|'organize'|'log'|null>(null),[matchFilter,setMatchFilter]=useState<'all'|'clubs'|'ultimate'>('all');
+  const actionPanelRef=useRef<HTMLDivElement>(null);
   const [historyQuery,setHistoryQuery]=useState(''),[historyFilter,setHistoryFilter]=useState<'played'|'needs-score'|'voided'|'all'>('played');
   const zone=timezone&&validTimezone(timezone)?timezone:Intl.DateTimeFormat().resolvedOptions().timeZone;
   const load=useCallback(async()=>{try{setData(await api<Data>('friendlies'));}catch(e){setError((e as Error).message);}},[]);
   useEffect(()=>{void load();},[load]);
+  useEffect(()=>{if(activeAction)actionPanelRef.current?.scrollIntoView({behavior:'smooth',block:'start'});},[activeAction]);
   async function send(body:Record<string,unknown>){
     setBusy(true);setError('');
     try{await api('friendlies',body);setWho('');setWhen('');setMessage('');setCounterFor(null);await load();}
@@ -204,24 +208,38 @@ export default function Friendlies({timezone,mode='active'}:{timezone?:string;mo
     </section>;
   }
   if(mode==='history')return <section className="panel friendlies-panel"><h2>Friendly match history</h2><p className="fine-print">Played, cancelled and expired friendlies are saved here. Confirm scores or correct a logged result from its match card.</p>{error&&<p className="inline-error" role="alert">{error}</p>}{history.length?history.map(card):<p className="fine-print">No past friendlies yet.</p>}</section>;
-  return <section className="panel friendlies-panel" aria-labelledby="friendlies-heading">
-    <h2 id="friendlies-heading" className="visually-hidden">Friendlies</h2>
-    <p className="fine-print">Play clubs or Ultimate Team. After a club game, add the score and optional team stars (3.5–5); Ultimate Team games use no club stars. Agreed scores count for Elo at half weight, with a scoreline and clean-sheet bonus for wins. No standings, awards or proof. Times show in {zone}.{data.me.owner?' As organizer, you can see every friendly and void a played match with a reason.':''}</p>
+  const matchMode=(i:Invitation)=>matchFilter==='all'||i.mode===matchFilter;
+  const needsAnswer=waiting.filter(matchMode),upcoming=active.filter(i=>!i.myTurn&&matchMode(i)).sort((a,b)=>new Date(a.proposedAt).getTime()-new Date(b.proposedAt).getTime());
+  const playedCount=history.filter(i=>i.status==='accepted'&&!!i.result).length;
+  const action=(key:'invite'|'organize'|'log')=>setActiveAction(current=>current===key?null:key);
+  return <div className="friendlies-hub">
+    <section className="friendlies-hero" aria-labelledby="friendlies-heading">
+      <div className="friendlies-hero-copy"><span className="eyebrow">UGS · PLAYER MATCHES</span><h2 id="friendlies-heading">Your next match starts here.</h2><p>Challenge a friend, play Clubs or Ultimate Team, and keep every result together.</p>
+        <div className="friendlies-hero-actions"><button type="button" className="btn primary" onClick={()=>action('invite')} disabled={!data.me.eligible}><Plus size={17}/>Invite a player</button><button type="button" className="btn secondary" onClick={()=>action('log')} disabled={!data.me.eligible}><ClipboardCheck size={17}/>Log a result</button></div>
+      </div><div className="friendlies-hero-art" aria-hidden="true"><div><Gamepad2 size={34}/><span>CLUBS</span></div><Swords size={30}/><div><Gamepad2 size={34}/><span>ULTIMATE</span></div></div>
+    </section>
+    <div className="friendlies-metrics" aria-label="Friendly match overview"><div><Clock3 size={21}/><span><strong>{active.length}</strong><small>Upcoming & pending</small></span></div><div><CalendarPlus size={21}/><span><strong>{waiting.length}</strong><small>Need your answer</small></span></div><div><History size={21}/><span><strong>{playedCount}</strong><small>Played matches</small></span></div></div>
     {error&&<p className="inline-error" role="alert">{error}</p>}
-    {!data.me.eligible?<p className="notice">{data.me.reason??'Friendlies are not available to you yet.'}</p>:<>
-      <details className="schedule-editor" open={!data.invitations.length}><summary>Invite a player</summary>
-        {!data.directory.some(p=>p.eligible)&&<div className="notice"><p><b>No one is available to invite yet.</b></p>{data.unavailable?.length?<ul>{data.unavailable.map(u=><li key={u.name}><b>{u.name}</b>: {u.reason}</li>)}</ul>:<p className="fine-print">Other players show up here once they have a finished profile (username, platform, timezone and an in-game ID).</p>}</div>}
-        <label className="field">Game mode<select value={gameMode} onChange={e=>setGameMode(e.target.value as 'clubs'|'ultimate')}><option value="clubs">Clubs</option><option value="ultimate">Ultimate Team</option></select></label>
-        <label className="field">Player<select value={who} onChange={e=>setWho(e.target.value)}><option value="">Choose a player</option>{data.directory.filter(p=>p.eligible).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
-        {timeForm('Send invitation',()=>void send({action:'invite',inviteeId:who,local:when,mode:gameMode,message}),!who)}
-        <p className="fine-print">Up to {data.me.maxPending} invitations can be waiting at once. Only you and the invited player can see an invitation.</p>
-      </details>
-      {data.me.owner&&<details className="schedule-editor"><summary>Arrange a friendly for two players</summary><OrganizeForm data={data} timezone={timezone} onDone={()=>void load()}/></details>}
-      <details className="schedule-editor"><summary>Log a game you already played</summary><LogForm data={data} timezone={timezone} onDone={()=>void load()}/></details>
-      {waiting.length>0&&<><h3>Needs your answer</h3>{waiting.map(card)}</>}
-      <h3>Upcoming and waiting</h3>
-      {active.filter(i=>!i.myTurn).length?active.filter(i=>!i.myTurn).map(card):<p className="fine-print">No upcoming friendlies.</p>}
-      <p className="fine-print">Past matches and their activity are in <a href={viewHref('history')}>History</a>.</p>
+    {!data.me.eligible?<section className="panel friendlies-panel"><p className="notice">{data.me.reason??'Friendlies are not available to you yet.'}</p></section>:<>
+      <section className="friendlies-actions" aria-label="Start a friendly"><div className="friendlies-section-head"><div><span className="eyebrow">GET PLAYING</span><h3>Choose what to do</h3></div><p>Games count for Elo at half weight once their scores are agreed.</p></div>
+        <div className="friendlies-action-grid"><button type="button" className={'friendlies-action-card'+(activeAction==='invite'?' active':'')} aria-expanded={activeAction==='invite'} onClick={()=>action('invite')}><span className="friendlies-action-icon"><Swords size={24}/></span><strong>Challenge a player</strong><small>Pick an opponent and propose a time.</small><ArrowRight size={18}/></button>
+          {data.me.owner&&<button type="button" className={'friendlies-action-card'+(activeAction==='organize'?' active':'')} aria-expanded={activeAction==='organize'} onClick={()=>action('organize')}><span className="friendlies-action-icon"><Users size={24}/></span><strong>Arrange for players</strong><small>Set up a match for two members.</small><ArrowRight size={18}/></button>}
+          <button type="button" className={'friendlies-action-card'+(activeAction==='log'?' active':'')} aria-expanded={activeAction==='log'} onClick={()=>action('log')}><span className="friendlies-action-icon"><ClipboardCheck size={24}/></span><strong>Log a played game</strong><small>Record the score and team details.</small><ArrowRight size={18}/></button></div>
+        {activeAction&&<div ref={actionPanelRef} className="friendlies-action-panel"><div className="friendlies-action-panel-head"><div><span className="eyebrow">{activeAction==='invite'?'NEW CHALLENGE':activeAction==='organize'?'ORGANIZER MATCH':'PLAYED RESULT'}</span><h3>{activeAction==='invite'?'Invite a player':activeAction==='organize'?'Arrange a friendly for two players':'Log a game you already played'}</h3></div><button type="button" className="icon-btn" aria-label="Close match form" onClick={()=>setActiveAction(null)}><X size={19}/></button></div>
+          {activeAction==='invite'?<>
+            {!data.directory.some(p=>p.eligible)&&<div className="notice"><p><b>No one is available to invite yet.</b></p>{data.unavailable?.length?<ul>{data.unavailable.map(u=><li key={u.name}><b>{u.name}</b>: {u.reason}</li>)}</ul>:<p className="fine-print">Other players appear once their gaming profile is complete.</p>}</div>}
+            <div className="friendlies-form-grid"><label className="field">Game mode<select value={gameMode} onChange={e=>setGameMode(e.target.value as 'clubs'|'ultimate')}><option value="clubs">Clubs</option><option value="ultimate">Ultimate Team</option></select></label><label className="field">Opponent<select value={who} onChange={e=>setWho(e.target.value)}><option value="">Choose a player</option>{data.directory.filter(p=>p.eligible).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label></div>
+            {timeForm('Send invitation',()=>void send({action:'invite',inviteeId:who,local:when,mode:gameMode,message}),!who)}
+            <p className="fine-print">The other player must accept your proposed time. You can have up to {data.me.maxPending} pending invitations.</p>
+          </>:activeAction==='organize'&&data.me.owner?<OrganizeForm data={data} timezone={timezone} onDone={()=>void load()}/>:<LogForm data={data} timezone={timezone} onDone={()=>void load()}/>}
+        </div>}
+      </section>
+      <section className="friendlies-board" aria-labelledby="friendlies-board-title"><div className="friendlies-section-head"><div><span className="eyebrow">MATCH BOARD</span><h3 id="friendlies-board-title">Upcoming & waiting</h3></div><a className="friendlies-history-link" href={viewHref('history')}>View match history <ArrowRight size={16}/></a></div>
+        <div className="friendlies-mode-filters" role="group" aria-label="Filter friendlies by game mode">{([['all','All'],['clubs','Clubs'],['ultimate','Ultimate Team']] as const).map(([value,label])=><button type="button" key={value} className={matchFilter===value?'active':''} aria-pressed={matchFilter===value} onClick={()=>setMatchFilter(value)}>{label}</button>)}</div>
+        {needsAnswer.length>0&&<div className="friendlies-match-group"><h4>Needs your answer <span>{needsAnswer.length}</span></h4><div className="friendlies-match-grid">{needsAnswer.map(card)}</div></div>}
+        <div className="friendlies-match-group"><h4>Scheduled & pending <span>{upcoming.length}</span></h4>{upcoming.length?<div className="friendlies-match-grid">{upcoming.map(card)}</div>:<div className="friendlies-empty"><Gamepad2 size={32}/><strong>{matchFilter==='all'?'No matches on the calendar yet.':`No ${formatLabel(matchFilter)} matches right now.`}</strong><p>Invite someone to get a game started.</p><button type="button" className="btn secondary" onClick={()=>action('invite')}><Plus size={16}/>Invite a player</button></div>}</div>
+      </section>
+      <p className="friendlies-rules-note">Clubs use optional 3.5–5 star ratings. Ultimate Team has no club-star adjustment. Winning by more and keeping a clean sheet increase Elo. <a href={viewHref('guide')}>Read the rules</a>.</p>
     </>}
-  </section>;
+  </div>;
 }
