@@ -19,7 +19,7 @@ import {getFriendlies,friendlyAction} from './friendlies-server';
 import {maskUndrawnManagers} from './draw-privacy';
 import {photoVersions,getPlayerPhoto,setPlayerPhoto} from './player-photos';
 import {getAvatar,avatarInfo,saveAvatar,removeAvatar,AVATAR_UPLOAD_LIMIT} from './avatar-server';
-import {disableAccount,enableAccount,removeMember} from './user-management';
+import {disableAccount,enableAccount,deleteAccount,removeMember} from './user-management';
 import {listSquads,saveSquad,deleteSquad,setSquadsOpen} from './squads';
 import {listTiquicia,changeTiquicia} from './tiquicia';
 import {createTeamPlayoff,recordTeamTie,simulateTeamPlayoff,cancelTeamPlayoff,getTeamPlayoff} from './team-playoffs';
@@ -174,9 +174,9 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
       if(request.method!=='POST')fail('Method not allowed.',405);
       return json(decideParticipation(user,await body(request)));
     }
-    if(path[0]==='accounts'&&path.length===2&&['disable','enable'].includes(path[1])){
+    if(path[0]==='accounts'&&path.length===2&&['disable','enable','delete'].includes(path[1])){
       if(request.method!=='POST')fail('Method not allowed.',405);
-      const input=await body(request);return json(path[1]==='disable'?disableAccount(user,input):enableAccount(user,input));
+      const input=await body(request);return json(path[1]==='disable'?disableAccount(user,input):path[1]==='enable'?enableAccount(user,input):deleteAccount(user,input));
     }
     if(path[0]==='tournament'&&path[2]==='members'&&path[3]==='remove'&&path.length===4){
       if(request.method!=='POST')fail('Method not allowed.',405);

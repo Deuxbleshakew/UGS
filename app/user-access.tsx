@@ -19,9 +19,18 @@ function Confirmed({label, confirmLabel, prompt, busy, danger = true, onConfirm}
   </form>;
 }
 
+function DeleteAccountButton({entry,busy,onDelete}:{entry:AccountAccessRow;busy:boolean;onDelete:(entry:AccountAccessRow)=>Promise<boolean>}){
+  const [open,setOpen]=useState(false),[typed,setTyped]=useState('');
+  return open?<form className="confirm-box" onSubmit={event=>{event.preventDefault();void onDelete(entry).then(deleted=>{if(deleted){setOpen(false);setTyped('');}});}}>
+    <p className="fine-print">Permanently delete this login, linked player profile, Elo, and all matches involving that player. Other players’ ratings will be recalculated. This cannot be undone.</p>
+    <label className="field">Type <b>{entry.name}</b> to confirm<input value={typed} onChange={event=>setTyped(event.target.value)} autoComplete="off" disabled={busy}/></label>
+    <div className="confirm-actions"><button className="btn danger" disabled={busy||typed!==entry.name}>Permanently delete account</button><button type="button" className="btn secondary" disabled={busy} onClick={()=>{setOpen(false);setTyped('');}}>Cancel</button></div>
+  </form>:<button type="button" className="btn secondary small" disabled={busy} onClick={()=>setOpen(true)}>Delete account permanently</button>;
+}
+
 type AccessResponse = {token: string | null; existingAccount: boolean; username: string};
 
-function UsernameAssignment({entry, busy, tournamentId, onAssign, onRename, onReset, onDisable, onEnable, onDecide, onAdd}: {entry: AccountAccessRow; busy: boolean; tournamentId?: string; onAdd: (entry: AccountAccessRow) => Promise<void>; onAssign: (entry: AccountAccessRow, username: string) => Promise<void>; onRename: (entry: AccountAccessRow, username: string) => Promise<void>; onReset: (entry: AccountAccessRow) => Promise<void>; onDisable: (entry: AccountAccessRow, reason: string) => Promise<void>; onEnable: (entry: AccountAccessRow) => Promise<void>; onDecide: (entry: AccountAccessRow, decision: 'approve' | 'reject') => Promise<void>}) {
+function UsernameAssignment({entry, busy, tournamentId, onAssign, onRename, onReset, onDisable, onEnable, onDelete, onDecide, onAdd}: {entry: AccountAccessRow; busy: boolean; tournamentId?: string; onAdd: (entry: AccountAccessRow) => Promise<void>; onAssign: (entry: AccountAccessRow, username: string) => Promise<void>; onRename: (entry: AccountAccessRow, username: string) => Promise<void>; onReset: (entry: AccountAccessRow) => Promise<void>; onDisable: (entry: AccountAccessRow, reason: string) => Promise<void>; onEnable: (entry: AccountAccessRow) => Promise<void>; onDelete: (entry: AccountAccessRow) => Promise<boolean>; onDecide: (entry: AccountAccessRow, decision: 'approve' | 'reject') => Promise<void>}) {
   const [username, setUsername] = useState(''),[renaming,setRenaming]=useState(false),[newUsername,setNewUsername]=useState('');
   return <div className="username-account">
     <div><b>{entry.name}{entry.owner ? ' · Owner' : ''}</b><small>{entry.email || 'No email provided'}</small><small>{entry.disabled ? 'Disabled' : entry.status === 'active' ? 'Active account' : 'Pending activation'}{entry.participation === 'no' ? ' · Viewer by choice' : ''}</small>{entry.disabled && entry.disabledReason && <small>Reason: {entry.disabledReason}</small>}</div>
@@ -41,6 +50,7 @@ function UsernameAssignment({entry, busy, tournamentId, onAssign, onRename, onRe
     {entry.accountId && !entry.owner && (entry.disabled
       ? <button type="button" className="btn secondary small" disabled={busy} onClick={() => void onEnable(entry)}>Re-enable account</button>
       : <Confirmed label="Disable account" confirmLabel="Disable this account" prompt={`Reason for disabling ${entry.name} (kept in the audit log)`} busy={busy} onConfirm={reason => onDisable(entry, reason)}/>)}
+    {entry.accountId&&!entry.owner&&<DeleteAccountButton entry={entry} busy={busy} onDelete={onDelete}/>}
   </div>;
 }
 
@@ -107,6 +117,16 @@ export default function UserAccess({state, onRefresh}: {state: AppState | null; 
     await api('accounts/enable', {accountId: entry.accountId});
     return `${entry.name} can sign in again with the same password. Their profile picture and Discord link were removed and must be set up again.`;
   });
+  async function deleteAccount(entry:AccountAccessRow):Promise<boolean>{
+    if(!owner||busy)return false;
+    setBusy(true);clearFeedback();
+    try{
+      const result=await api<{playersDeleted:number;friendliesDeleted:number}>('accounts/delete',{accountId:entry.accountId,name:entry.name,confirm:true});
+      setMessage(`${entry.name} was permanently deleted, including ${result.playersDeleted} player profile${result.playersDeleted===1?'':'s'} and ${result.friendliesDeleted} friendl${result.friendliesDeleted===1?'y':'ies'}.`);
+      await onRefresh();return true;
+    }catch(error){setError((error as Error).message);return false;}
+    finally{setBusy(false);}
+  }
   const decide = (entry: AccountAccessRow, decision: 'approve' | 'reject') => run(async () => {
     await api('accounts/participation', {accountId: entry.accountId, decision});
     return decision === 'approve' ? `${entry.name} can now take part. Give them player access below if they do not have it yet.` : `${entry.name} stays a viewer.`;
@@ -150,7 +170,7 @@ export default function UserAccess({state, onRefresh}: {state: AppState | null; 
       <p className="fine-print">Assign your own username here too. Existing accounts keep their passwords and history. Email sign-in ends for an account when you assign its username. Assigning a pending invitation replaces its old link.</p>
       <div className="account-filters"><label className="field">Search accounts<input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Name or username" autoComplete="off"/></label>
         {state?.tournament && <label className="sq-allswitch"><input type="checkbox" checked={notIn} onChange={event => setNotIn(event.target.checked)}/><span>Only people not in this tournament yet</span></label>}</div>
-      <div className="username-accounts">{(state?.accountAccess ?? []).filter(entry => (!search.trim() || `${entry.name} ${entry.username ?? ''}`.toLowerCase().includes(search.trim().toLowerCase())) && (!notIn || !state?.tournament || !entry.tournamentIds?.includes(state.tournament.id))).map(entry => <UsernameAssignment key={entry.key} entry={entry} busy={busy} tournamentId={state?.tournament?.id} onAdd={addToTournament} onAssign={assign} onRename={rename} onReset={reset} onDisable={disable} onEnable={enable} onDecide={decide}/>)}</div>
+      <div className="username-accounts">{(state?.accountAccess ?? []).filter(entry => (!search.trim() || `${entry.name} ${entry.username ?? ''}`.toLowerCase().includes(search.trim().toLowerCase())) && (!notIn || !state?.tournament || !entry.tournamentIds?.includes(state.tournament.id))).map(entry => <UsernameAssignment key={entry.key} entry={entry} busy={busy} tournamentId={state?.tournament?.id} onAdd={addToTournament} onAssign={assign} onRename={rename} onReset={reset} onDisable={disable} onEnable={enable} onDelete={deleteAccount} onDecide={decide}/>)}</div>
       {!!state?.members?.length && <><h3 className="form-section-title">Selected tournament users</h3><div className="member-list">{state.members.map(member => <div key={member.id}><span className="avatar small">{member.name[0]}</span><span><b>{member.name}</b><small>{member.username ? '@' + member.username : 'Username not assigned'}</small><small>{member.role === 'admin' ? 'Admin · you' : member.role === 'viewer' ? 'Viewer' : 'Player'}</small></span><span className="pot-tag">{member.user_id ? 'Active' : 'Pending'}</span>{member.role !== 'admin' && member.user_id !== state.user.userId && <Confirmed label="Remove" confirmLabel="Remove from tournament" prompt={`Reason for removing ${member.name} from this tournament`} busy={busy} onConfirm={reason => removeMember(member.id, member.name, reason)}/>}</div>)}</div></>}
       {admin && state?.tournament && <JoinLinkPanel key={'join-' + state.tournament.id} tournamentId={state.tournament.id}/>}
       {admin && state?.tournament && <ViewerAccess key={state.tournament.id} tournamentId={state.tournament.id} onRefresh={onRefresh}/>}

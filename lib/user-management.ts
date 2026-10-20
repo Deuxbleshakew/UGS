@@ -4,8 +4,10 @@ import {z} from 'zod';
 import {database} from '@/scripts/local-store.mjs';
 import {AccountAccessError} from './account-access';
 import {configSchema} from './domain';
+import {deletePlayerRecord,PlayerDeletionBlocked} from './player-deletion';
 
-// Owner-only user management. Nothing here deletes results, Elo, fixtures or audit history.
+// Owner-only user management. Disable and remove-member preserve match history;
+// permanent account deletion is a separate, explicitly confirmed purge.
 // - Disabling an account blocks sign-in and removes the things that tie a live person to the site
 //   (sessions, Discord link, profile picture, open friendlies). It is reversible.
 // - Removing a member takes one person out of one tournament (their access to it). Fixtures and results stay.
@@ -17,6 +19,7 @@ const reason=z.string().trim().min(3,'Give a reason (at least 3 characters).').m
 const disableSchema=z.object({accountId:z.string().min(1),reason,confirm:z.literal(true,{errorMap:()=>({message:'Confirm the action first.'})})});
 const enableSchema=z.object({accountId:z.string().min(1)});
 const removeSchema=z.object({memberId:z.string().min(1),reason,confirm:z.literal(true,{errorMap:()=>({message:'Confirm the action first.'})})});
+const deleteSchema=z.object({accountId:z.string().min(1),name:z.string().min(1),confirm:z.literal(true)});
 
 function requireOwner(d:DatabaseSync,actor:Actor){
   if(!d.prepare('SELECT 1 FROM accounts WHERE id=? AND owner=1').get(actor.userId))fail('Only the owner can manage users.',403);
@@ -78,6 +81,90 @@ export function enableAccount(actor:Actor,input:unknown){
     record(d,actor,a.id,a.username,'enable-account');
     return {ok:true};
   });
+}
+
+/** Permanently erase a non-owner account and all of its linked player and match records. */
+export function deleteAccount(actor:Actor,input:unknown){
+  const data=deleteSchema.parse(input);
+  try{return tx(d=>{
+    requireOwner(d,actor);
+    if(data.accountId===actor.userId)fail('You cannot delete your own admin account.',409);
+    const account=d.prepare('SELECT id,name,owner FROM accounts WHERE id=?').get(data.accountId) as {id:string;name:string;owner:number}|undefined;
+    if(!account)fail('Account not found. Refresh the list.',404);
+    if(account.owner)fail('The owner account cannot be deleted.',409);
+    if(account.name!==data.name)fail('Account details changed. Refresh and confirm again.',409);
+    if(d.prepare('SELECT 1 FROM tournaments WHERE owner_id=?').get(account.id))fail('Delete this account’s tournaments first.',409);
+
+    const players=d.prepare(`SELECT DISTINCT p.id FROM community_players p WHERE p.id IN (
+      SELECT player_id FROM account_usernames WHERE account_id=? AND player_id IS NOT NULL
+      UNION SELECT player_id FROM members WHERE user_id=? AND player_id IS NOT NULL)`)
+      .all(account.id,account.id) as {id:string}[];
+    for(const player of players){
+      if(d.prepare('SELECT 1 FROM account_usernames WHERE player_id=? AND account_id<>?').get(player.id,account.id)
+        ||d.prepare('SELECT 1 FROM members WHERE player_id=? AND user_id IS NOT NULL AND user_id<>?').get(player.id,account.id))
+        fail('This player profile is also linked to another login. Separate the accounts before deleting.',409);
+    }
+
+    // The invitation, its result and its append-only events belong to both players.
+    // An account erasure removes these games, which also removes them from Elo.
+    const invitations=d.prepare('SELECT id FROM friendly_invitations WHERE inviter_id=? OR invitee_id=?').all(account.id,account.id) as {id:string}[];
+    for(const invitation of invitations)d.prepare('INSERT INTO account_deletion_context(invitation_id) VALUES(?)').run(invitation.id);
+    const otherEventInvitations=d.prepare('SELECT DISTINCT invitation_id FROM friendly_events WHERE actor_id=?').all(account.id) as {invitation_id:string}[];
+    for(const invitation of otherEventInvitations)d.prepare('INSERT OR IGNORE INTO account_deletion_context(invitation_id) VALUES(?)').run(invitation.invitation_id);
+    try{
+      for(const invitation of invitations){
+        d.prepare('DELETE FROM friendly_events WHERE invitation_id=?').run(invitation.id);
+        d.prepare('DELETE FROM friendly_organizer_proposals WHERE invitation_id=?').run(invitation.id);
+        d.prepare('DELETE FROM friendly_invitations WHERE id=?').run(invitation.id);
+      }
+      d.prepare('DELETE FROM friendly_events WHERE actor_id=?').run(account.id);
+    }finally{d.prepare('DELETE FROM account_deletion_context').run();}
+    d.prepare('UPDATE friendly_organizer_proposals SET created_by=? WHERE created_by=?').run(actor.userId,account.id);
+
+    const proposalTournaments=d.prepare('SELECT DISTINCT tournament_id FROM schedule_events WHERE actor_id=? UNION SELECT DISTINCT tournament_id FROM schedule_proposals WHERE proposer_account_id=?')
+      .all(account.id,account.id) as {tournament_id:string}[];
+    for(const row of proposalTournaments)d.prepare('INSERT OR IGNORE INTO tournament_deletion_context(tournament_id) VALUES(?)').run(row.tournament_id);
+    try{
+      d.prepare('DELETE FROM schedule_events WHERE actor_id=? OR proposal_id IN (SELECT id FROM schedule_proposals WHERE proposer_account_id=?)').run(account.id,account.id);
+      d.prepare('DELETE FROM schedule_proposals WHERE proposer_account_id=?').run(account.id);
+    }finally{for(const row of proposalTournaments)d.prepare('DELETE FROM tournament_deletion_context WHERE tournament_id=?').run(row.tournament_id);}
+    d.prepare('UPDATE schedule_proposals SET decided_by=NULL WHERE decided_by=?').run(account.id);
+
+    // Remove the person from memberships before deleting the profile. This keeps
+    // every other member and their matches intact.
+    d.prepare('DELETE FROM members WHERE user_id=? OR username IN (SELECT username FROM account_usernames WHERE account_id=?)').run(account.id,account.id);
+    for(const player of players)deletePlayerRecord(d,actor.userId,player.id,true);
+
+    d.prepare('DELETE FROM account_access_audit WHERE actor_id=? OR target_account_id=?').run(account.id,account.id);
+    d.prepare('DELETE FROM discord_link_audit WHERE account_id=?').run(account.id);
+    d.prepare('DELETE FROM account_status WHERE account_id=?').run(account.id);
+    d.prepare('UPDATE account_status SET disabled_by=? WHERE disabled_by=?').run(actor.userId,account.id);
+    d.prepare('DELETE FROM account_participation WHERE account_id=?').run(account.id);
+    d.prepare('UPDATE account_participation SET decided_by=NULL WHERE decided_by=?').run(account.id);
+    d.prepare('DELETE FROM password_reset_tokens WHERE account_id=?').run(account.id);
+    d.prepare('DELETE FROM sessions WHERE account_id=?').run(account.id);
+    d.prepare('DELETE FROM discord_oauth_states WHERE account_id=?').run(account.id);
+    d.prepare('DELETE FROM discord_links WHERE account_id=?').run(account.id);
+    d.prepare('DELETE FROM account_avatars WHERE account_id=?').run(account.id);
+    d.prepare('DELETE FROM account_profiles WHERE account_id=?').run(account.id);
+    d.prepare('DELETE FROM squads WHERE owner_id=?').run(account.id);
+    d.prepare('UPDATE team_playoffs SET created_by=? WHERE created_by=?').run(actor.userId,account.id);
+    d.prepare('UPDATE team_playoffs SET cancelled_by=? WHERE cancelled_by=?').run(actor.userId,account.id);
+    d.prepare('UPDATE squad_access SET updated_by=? WHERE updated_by=?').run(actor.userId,account.id);
+    d.prepare('UPDATE club_stars SET updated_by=? WHERE updated_by=?').run(actor.userId,account.id);
+    d.prepare('UPDATE tiquicia_players SET created_by=? WHERE created_by=?').run(actor.userId,account.id);
+    d.prepare('UPDATE join_links SET created_by=? WHERE created_by=?').run(actor.userId,account.id);
+    d.prepare('DELETE FROM audit WHERE actor_id=?').run(account.id);
+    d.prepare('DELETE FROM proofs WHERE uploader=?').run(account.id);
+    d.prepare('UPDATE fixtures SET submitted_by=NULL WHERE submitted_by=?').run(account.id);
+    d.prepare('DELETE FROM invitations WHERE username IN (SELECT username FROM account_usernames WHERE account_id=?)').run(account.id);
+    d.prepare('DELETE FROM account_usernames WHERE account_id=?').run(account.id);
+    d.prepare('DELETE FROM accounts WHERE id=?').run(account.id);
+    const violations=d.prepare('PRAGMA foreign_key_check').all();
+    if(violations.length)fail('Account deletion would leave broken references; no changes were saved.',409);
+    record(d,actor,null,null,'delete-account');
+    return {ok:true,playersDeleted:players.length,friendliesDeleted:invitations.length};
+  });}catch(error){if(error instanceof PlayerDeletionBlocked)fail(error.message,409);throw error;}
 }
 
 /** Take one person out of one tournament. Fixtures, results and Elo are untouched; the old membership is snapshotted in the audit log. */
