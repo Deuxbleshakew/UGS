@@ -91,8 +91,23 @@ try{
   assert.equal(communityRankings('owner').find(p=>p.id==='p-b').played,beforeRated+1);
   assert.equal(getFriendlies(actor('b')).invitations.find(i=>i.id===legacyId).status,'accepted');
   assert.equal(getFriendlies(actor('c')).invitations.some(i=>i.id===legacyId),false);
+  db.prepare('INSERT INTO accounts(id,email,name,password_hash,owner,created_at) VALUES(?,?,?,?,?,?)').run('xavier','','Xavier','hash',0,'now');
+  db.prepare('INSERT INTO account_usernames(username,account_id,created_at) VALUES(?,?,?)').run('xavier_user','xavier','now');
+  db.prepare('INSERT INTO account_profiles(account_id,data,updated_at) VALUES(?,?,?)').run('xavier',JSON.stringify({displayName:'Xavier',teams:[],primary:null,platforms:[],timezone:'',psnId:'',eaId:''}),'now');
+  db.prepare("INSERT INTO members(id,tournament_id,user_id,email,name,role,username) VALUES(?,'t',?,'',?,'manager',?)").run('m-xavier','xavier','Xavier','xavier_user');
+  db.prepare('INSERT INTO community_players(id,owner_id,name,created_at) VALUES(?,?,?,?)').run('p-xavier','owner','Xavier','now');
+  const xavierEntry=getFriendlies(actor('owner')).directory.find(p=>p.id==='xavier');
+  assert.equal(xavierEntry.name,'Xavier');
+  assert.equal(xavierEntry.ranked,false);
+  assert.equal(xavierEntry.eligible,false);
+  assert.throws(()=>friendlyAction(actor('a'),{action:'link-player',accountId:'xavier',playerId:'p-xavier'}),/Only the organizer/);
+  friendlyAction(actor('owner'),{action:'link-player',accountId:'xavier',playerId:'p-xavier'});
+  assert.equal(getFriendlies(actor('owner')).directory.find(p=>p.id==='xavier').ranked,true);
+  const xavierGame=friendlyAction(actor('owner'),{action:'log',asPlayerId:'b',opponentId:'xavier',local:playedLocal,myGoals:1,theirGoals:2,myStars:null,theirStars:null}).id;
+  assert.equal(getFriendlies(actor('owner')).invitations.find(i=>i.id===xavierGame).elo.state,'counts');
+  assert.equal(communityRankings('owner').find(p=>p.id==='p-xavier').played,1);
   assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
-  console.log('PASS: organizer approval, admin visibility, voiding, linked-player validation and historical Elo correction.');
+  console.log('PASS: Xavier appears in the admin picker, can be linked to an Elo profile, and his logged match is rated.');
 }finally{
   try{testDb?.close();}catch{/* already closed */}
   if(!dir.startsWith(root+path.sep))throw new Error('Test directory escaped the H: project.');

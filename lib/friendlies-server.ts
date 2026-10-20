@@ -89,6 +89,7 @@ const starValue=z.number().min(0.5).max(5).refine(n=>Number.isInteger(n*2),'Star
 const actionSchema=z.discriminatedUnion('action',[
   z.object({action:z.literal('invite'),inviteeId:z.string().min(1).max(100),local,message:note}),
   z.object({action:z.literal('organize'),firstId:z.string().min(1).max(100),secondId:z.string().min(1).max(100),local,message:note}),
+  z.object({action:z.literal('link-player'),accountId:z.string().min(1).max(100),playerId:z.string().min(1).max(100).optional(),create:z.boolean().optional()}),
   z.object({action:z.literal('accept'),id:z.string(),version:z.number().int()}),
   z.object({action:z.literal('decline'),id:z.string(),version:z.number().int(),message:note}),
   z.object({action:z.literal('counter'),id:z.string(),version:z.number().int(),local,message:note}),
@@ -104,6 +105,31 @@ export function friendlyAction(actor:Actor,input:unknown){
     const me=eligibility(actor.userId);
     if(!me.ok)fail(me.reason??'You cannot arrange friendlies yet.',403);
     const who={id:actor.userId,name:me.name||actor.displayName};
+    if(data.action==='link-player'){
+      if(profileOf(actor.userId)?.a.owner!==1)fail('Only the organizer can link player accounts.',403);
+      if(!!data.playerId===!!data.create)fail('Choose an existing Elo player or create a new one.');
+      const account=profileOf(data.accountId);
+      if(!account)fail('Account not found.',404);
+      const reservation=d.prepare('SELECT username,player_id FROM account_usernames WHERE account_id=?').get(data.accountId) as {username:string;player_id:string|null}|undefined;
+      if(!reservation)fail('Assign this account a username in Users & access first.',409);
+      if(friendlyPlayerIds().has(data.accountId))fail('This account already has a linked Elo player.',409);
+      const ownerId=actor.userId,name=(account.data.displayName||account.a.name).trim();
+      let playerId=data.playerId;
+      if(data.create){
+        if(!name||name.length>80)fail('Set a player display name of at most 80 characters first.');
+        if(d.prepare('SELECT 1 FROM community_players WHERE owner_id=? AND name=? COLLATE NOCASE').get(ownerId,name))fail('A player with this name already exists. Choose that existing profile.',409);
+        playerId=uid();
+        d.prepare('INSERT INTO community_players(id,owner_id,name,created_at) VALUES(?,?,?,?)').run(playerId,ownerId,name,nowIso());
+      }else if(!d.prepare('SELECT 1 FROM community_players WHERE id=? AND owner_id=?').get(playerId!,ownerId))fail('Choose a player from this community.',404);
+      if(d.prepare('SELECT 1 FROM account_usernames WHERE player_id=? AND username<>?').get(playerId!,reservation.username)
+        ||d.prepare('SELECT 1 FROM members WHERE player_id=? AND user_id IS NOT NULL AND user_id<>?').get(playerId!,data.accountId))fail('That Elo player is linked to another account.',409);
+      if(d.prepare('SELECT 1 FROM members WHERE user_id=? AND player_id IS NOT NULL AND player_id<>?').get(data.accountId,playerId!))fail('This account already has a different player assignment. Resolve it in Users & access.',409);
+      if(d.prepare('SELECT 1 FROM members m WHERE m.user_id=? AND EXISTS(SELECT 1 FROM members x WHERE x.tournament_id=m.tournament_id AND x.player_id=? AND x.id<>m.id)').get(data.accountId,playerId!))fail('That player already has a tournament member slot. Resolve the duplicate in Users & access.',409);
+      d.prepare('UPDATE account_usernames SET player_id=? WHERE account_id=?').run(playerId!,data.accountId);
+      d.prepare("UPDATE members SET player_id=? WHERE user_id=? AND player_id IS NULL AND role IN ('manager','participant')").run(playerId!,data.accountId);
+      d.prepare('INSERT INTO account_access_audit(id,actor_id,target_account_id,username,action,created_at) VALUES(?,?,?,?,?,?)').run(uid(),actor.userId,data.accountId,reservation.username,'link-elo-player',nowIso());
+      return {ok:true};
+    }
     if(data.action==='invite'){
       if(data.inviteeId===actor.userId)fail('You cannot invite yourself.');
       const them=eligibility(data.inviteeId);
@@ -138,7 +164,8 @@ export function friendlyAction(actor:Actor,input:unknown){
       const owner=profileOf(actor.userId)?.a.owner===1,firstId=data.asPlayerId&&data.asPlayerId!==actor.userId?data.asPlayerId:actor.userId;
       if(firstId!==actor.userId&&!owner)fail('Only the organizer can log a friendly between two other players.',403);
       if(firstId===data.opponentId)fail('Choose two different players.');
-      if(!eligibility(firstId).ok||!eligibility(data.opponentId).ok)fail('Both players must be available for friendlies.',404);
+      if(owner){if(!profileOf(firstId)||!profileOf(data.opponentId))fail('Choose two registered player accounts.',404);}
+      else if(!eligibility(firstId).ok||!eligibility(data.opponentId).ok)fail('Both players must be available for friendlies.',404);
       const linked=friendlyPlayerIds();
       if(!linked.has(firstId)||!linked.has(data.opponentId))fail('Both accounts need a linked Elo player. Choose the players’ own accounts, not the admin login.',409);
       const at=toUtc(data.local,me.timezone),t=new Date(at).getTime();
@@ -162,7 +189,7 @@ export function friendlyAction(actor:Actor,input:unknown){
       if(inv.status!=='accepted'||!d.prepare("SELECT 1 FROM friendly_events WHERE invitation_id=? AND action='logged'").get(inv.id))fail('Only a played game logged after the fact can have its players corrected.',409);
       if(data.firstId===data.secondId)fail('Choose two different players.');
       if(data.firstId===inv.inviter_id&&data.secondId===inv.invitee_id)fail('Choose a different player to correct.');
-      if(!eligibility(data.firstId).ok||!eligibility(data.secondId).ok)fail('Both players must be available for friendlies.',404);
+      if(!profileOf(data.firstId)||!profileOf(data.secondId))fail('Choose two registered player accounts.',404);
       const linked=friendlyPlayerIds();
       if(!linked.has(data.firstId)||!linked.has(data.secondId))fail('Both accounts need a linked Elo player.',409);
       if(d.prepare("SELECT 1 FROM friendly_invitations WHERE id<>? AND pair_key=? AND status='accepted' AND proposed_at=?").get(inv.id,pairKey(data.firstId,data.secondId),inv.proposed_at))fail('A game between these players is already recorded at that time.',409);
@@ -253,12 +280,13 @@ export function getFriendlies(actor:Actor){
     const missing=[i.firstId,i.secondId].filter(id=>!linked.has(id)).map(id=>name(id));
     return {...i,logged:loggedIds.has(i.id),ratingIssue:i.status==='accepted'&&ev&&ev.state!=='earlier'&&missing.length?`Not in Elo: ${missing.join(' and ')} ${missing.length===1?'has':'have'} no linked player profile.`:null,elo:ev?{state:ev.state,canConfirm:ev.state==='waiting'&&ev.needs===actor.userId}:null,result:r?{mine:mine?r.inviter:r.invitee,theirs:mine?r.invitee:r.inviter,by:r.by,at:r.at}:null};
   });
-  const directory=me.ok?(d.prepare('SELECT id FROM accounts WHERE id<>?').all(actor.userId) as {id:string}[]).map(a=>({id:a.id,e:eligibility(a.id)})).filter(x=>x.e.ok&&x.e.name).map(x=>({id:x.id,name:x.e.name,ranked:linked.has(x.id)})).sort((a,b)=>a.name.localeCompare(b.name)):[];
+  const directory=me.ok?(d.prepare('SELECT id FROM accounts WHERE id<>?').all(actor.userId) as {id:string}[]).map(a=>({id:a.id,e:eligibility(a.id)})).filter(x=>(isOwner||x.e.ok)&&x.e.name).map(x=>({id:x.id,name:x.e.name,ranked:linked.has(x.id),eligible:x.e.ok,reason:x.e.reason??null})).sort((a,b)=>a.name.localeCompare(b.name)):[];
   // Owner only: explain why someone is missing from the invite list, so an empty dropdown is never a mystery.
   const unavailable=isOwner?(d.prepare('SELECT id FROM accounts WHERE id<>?').all(actor.userId) as {id:string}[]).map(a=>{
     const e=eligibility(a.id);if(e.ok)return null;
     const p=profileOf(a.id),missing=p&&e.reason==='Finish your profile first.'?missingProfile(p.data,p.a.username,true):[];
     return {name:e.name||p?.a.name||'',reason:missing.length?`Profile missing: ${missing.map(m=>m==='Ask the owner to assign your username'?'username (assign it in User Access)':m.toLowerCase()).join(', ')}`:(e.reason??'Not available')};
   }).filter((x):x is {name:string;reason:string}=>!!x&&!!x.name).sort((a,b)=>a.name.localeCompare(b.name)):[];
-  return {now:nowIso(),me:{id:actor.userId,name:me.name,eligible:me.ok,reason:me.reason??null,timezone:me.timezone,maxPending:MAX_PENDING_OUT,owner:isOwner,ranked:linked.has(actor.userId)},invitations,events,directory,unavailable};
+  const unlinkedProfiles=isOwner?(d.prepare('SELECT p.id,p.name FROM community_players p WHERE p.owner_id=? AND NOT EXISTS(SELECT 1 FROM account_usernames u WHERE u.player_id=p.id AND u.account_id IS NOT NULL) AND NOT EXISTS(SELECT 1 FROM members m WHERE m.player_id=p.id AND m.user_id IS NOT NULL) ORDER BY p.name').all(actor.userId) as {id:string;name:string}[]):[];
+  return {now:nowIso(),me:{id:actor.userId,name:me.name,eligible:me.ok,reason:me.reason??null,timezone:me.timezone,maxPending:MAX_PENDING_OUT,owner:isOwner,ranked:linked.has(actor.userId)},invitations,events,directory,unavailable,unlinkedProfiles};
 }

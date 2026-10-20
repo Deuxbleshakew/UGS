@@ -8,11 +8,21 @@ type Invitation={elo?:{state:'counts'|'waiting'|'earlier'|'none';canConfirm:bool
 type Ev={id:string;invitationId:string;actorName:string;at:string;action:string;reason:string|null;proposedAt:string|null};
 type Side={goals:number;stars:number|null};
 type Result={mine:Side;theirs:Side;by:string;at:string};
-type Data={unavailable?:{name:string;reason:string}[];now:string;me:{id:string;name:string;eligible:boolean;reason:string|null;timezone:string;maxPending:number;owner?:boolean;ranked:boolean};invitations:Invitation[];events:Ev[];directory:{id:string;name:string;ranked:boolean}[]};
+type DirectoryPlayer={id:string;name:string;ranked:boolean;eligible:boolean;reason:string|null};
+type Data={unavailable?:{name:string;reason:string}[];unlinkedProfiles?:{id:string;name:string}[];now:string;me:{id:string;name:string;eligible:boolean;reason:string|null;timezone:string;maxPending:number;owner?:boolean;ranked:boolean};invitations:Invitation[];events:Ev[];directory:DirectoryPlayer[]};
 const statusText:Record<string,string>={pending:'Waiting for an answer',accepted:'Accepted',declined:'Declined',cancelled:'Cancelled',expired:'Expired'};
 const eventText:Record<string,string>={logged:'Logged after the fact',reassigned:'Players corrected',invited:'Invited',organized:'Organizer proposed',agreed:'First player accepted',countered:'Counter-proposed',accepted:'Accepted',declined:'Declined',cancelled:'Cancelled',expired:'Expired'};
 
 const STAR_OPTIONS=Array.from({length:10},(_,i)=>(i+1)/2);
+function LinkAccountForm({person,data,onDone}:{person:DirectoryPlayer;data:Data;onDone:()=>void}){
+  const [choice,setChoice]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');
+  async function link(){setBusy(true);setError('');try{await api('friendlies',{action:'link-player',accountId:person.id,...(choice==='new'?{create:true}:{playerId:choice})});onDone();}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
+  return <div className="notice warning"><b>{person.name} needs an Elo player link.</b><p className="fine-print">Choose the existing player profile to keep their match history, or create one if this player is new.</p>
+    <label className="field">Elo player<select value={choice} onChange={e=>setChoice(e.target.value)}><option value="">Choose a profile</option>{data.unlinkedProfiles?.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}<option value="new">Create new profile for {person.name}</option></select></label>
+    {error&&<p className="inline-error" role="alert">{error}</p>}
+    <button type="button" className="btn secondary" disabled={busy||!choice} onClick={()=>void link()}>{busy?'Linking…':'Link player to Elo'}</button>
+  </div>;
+}
 function ResultBox({inv,busy,onSave}:{inv:Invitation;busy:boolean;onSave:(body:Record<string,unknown>)=>void}){
   const r=inv.result,[open,setOpen]=useState(false),[mine,setMine]=useState(String(r?.mine.goals??'')),[theirs,setTheirs]=useState(String(r?.theirs.goals??''));
   const [ms,setMs]=useState(r?.mine.stars==null?'':String(r.mine.stars)),[ts,setTs]=useState(r?.theirs.stars==null?'':String(r.theirs.stars));
@@ -38,7 +48,8 @@ function LogForm({data,timezone,onDone}:{data:Data;timezone?:string;onDone:()=>v
   const owner=!!data.me.owner,[first,setFirst]=useState(''),[opp,setOpp]=useState(''),[when,setWhen]=useState(''),[mine,setMine]=useState(''),[theirs,setTheirs]=useState('');
   const [ms,setMs]=useState(''),[ts,setTs]=useState(''),[message,setMessage]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');
   const num=(x:string)=>x.replace(/\D/g,'').slice(0,2),stars=(x:string)=>x===''?null:Number(x);
-  const ranked=data.directory.filter(p=>p.ranked),names=new Map(data.directory.map(p=>[p.id,p.name])),firstName=first?names.get(first)??'Player 1':'You',oppName=opp?names.get(opp)??'Opponent':'Opponent';
+  const choices=owner?data.directory:data.directory.filter(p=>p.eligible),names=new Map(data.directory.map(p=>[p.id,p.name])),firstName=first?names.get(first)??'Player 1':'You',oppName=opp?names.get(opp)??'Opponent':'Opponent';
+  const firstAccount=data.directory.find(p=>p.id===first),oppAccount=data.directory.find(p=>p.id===opp),missingLink=[firstAccount,oppAccount].filter((p):p is DirectoryPlayer=>!!p&&!p.ranked);
   const starPick=(label:string,v:string,set:(x:string)=>void)=><label className="field">{label}<select value={v} onChange={e=>set(e.target.value)}><option value="">Not set</option>{STAR_OPTIONS.map(o=><option key={o} value={o}>{o} ★</option>)}</select></label>;
   async function save(){
     setBusy(true);setError('');
@@ -47,21 +58,23 @@ function LogForm({data,timezone,onDone}:{data:Data;timezone?:string;onDone:()=>v
   }
   return <div className="sched-form">
     {!timezone&&<p className="notice warning">Set your timezone in My Profile first. The date you enter is read in your profile timezone.</p>}
-    {owner&&<label className="field">First player <small>{data.me.ranked?'Leave as you to log your own game.':'Your admin account has no linked Elo player; choose your separate player account.'}</small><select value={first} onChange={e=>{setFirst(e.target.value);setOpp('');}}><option value="">{data.me.ranked?'You':'Choose a player'}</option>{ranked.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>}
-    <label className="field">{owner&&first?'Second player':'Played against'}<select value={opp} onChange={e=>setOpp(e.target.value)}><option value="">Choose a player</option>{ranked.filter(p=>p.id!==first).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+    {owner&&<label className="field">First player <small>{data.me.ranked?'Leave as you to log your own game.':'Your admin account has no linked Elo player; choose your separate player account.'}</small><select value={first} onChange={e=>{setFirst(e.target.value);setOpp('');}}><option value="">{data.me.ranked?'You':'Choose a player'}</option>{choices.map(p=><option key={p.id} value={p.id}>{p.name}{p.ranked?'':' · Link for Elo'}</option>)}</select></label>}
+    <label className="field">{owner&&first?'Second player':'Played against'}<select value={opp} onChange={e=>setOpp(e.target.value)}><option value="">Choose a player</option>{choices.filter(p=>p.id!==first).map(p=><option key={p.id} value={p.id}>{p.name}{p.ranked?'':' · Link for Elo'}</option>)}</select></label>
+    {owner&&missingLink.map(p=><LinkAccountForm key={p.id} person={p} data={data} onDone={onDone}/>)}
     <label className="field">When it was played <small>{timezone||'no timezone saved'} · local time</small><input type="datetime-local" value={when} onChange={e=>setWhen(e.target.value)}/></label>
     <label className="field">{firstName==='You'?'Your goals':`${firstName}’s goals`}<input inputMode="numeric" maxLength={2} value={mine} onChange={e=>setMine(num(e.target.value))}/></label>
     <label className="field">{oppName}’s goals<input inputMode="numeric" maxLength={2} value={theirs} onChange={e=>setTheirs(num(e.target.value))}/></label>
     {starPick(firstName==='You'?'Your team stars':`${firstName}’s team stars`,ms,setMs)}{starPick(`${oppName}’s team stars`,ts,setTs)}
     <label className="field">Note <small>Optional</small><input maxLength={500} value={message} onChange={e=>setMessage(e.target.value)}/></label>
     {error&&<p className="inline-error" role="alert">{error}</p>}
-    <button type="button" className="btn primary" disabled={busy||!opp||!when||!timezone||mine===''||theirs===''||(owner&&!data.me.ranked&&!first)||(!owner&&!data.me.ranked)} onClick={()=>void save()}>{busy?'Saving…':'Save played friendly'}</button>
+    <button type="button" className="btn primary" disabled={busy||!opp||!when||!timezone||mine===''||theirs===''||missingLink.length>0||(owner&&!data.me.ranked&&!first)||(!owner&&!data.me.ranked)} onClick={()=>void save()}>{busy?'Saving…':'Save played friendly'}</button>
     <p className="fine-print">For a game that is already over. It shows in both players’ history and counts for Elo at half weight once the other player confirms the score. Either player can correct the score later.</p>
   </div>;
 }
 function OrganizeForm({data,timezone,onDone}:{data:Data;timezone?:string;onDone:()=>void}){
   const [first,setFirst]=useState(''),[second,setSecond]=useState(''),[when,setWhen]=useState(''),[message,setMessage]=useState('');
   const [busy,setBusy]=useState(false),[error,setError]=useState('');
+  const eligible=data.directory.filter(p=>p.eligible);
   const preview=when&&timezone?(()=>{const r=zonedLocalToUtc(when,timezone);return r.ok?`= ${formatInZone(r.utc,'UTC')}`:zoneMessages[r.reason];})():'';
   async function save(){
     setBusy(true);setError('');
@@ -72,8 +85,8 @@ function OrganizeForm({data,timezone,onDone}:{data:Data;timezone?:string;onDone:
   }
   return <div className="sched-form">
     {!timezone&&<p className="notice warning">Set your timezone in My Profile first. Times you enter are read in your profile timezone.</p>}
-    <label className="field">First player<select value={first} onChange={e=>{setFirst(e.target.value);setSecond('');}}><option value="">You</option>{data.directory.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
-    <label className="field">Second player<select value={second} onChange={e=>setSecond(e.target.value)}><option value="">Choose a player</option>{data.directory.filter(p=>p.id!==first).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+    <label className="field">First player<select value={first} onChange={e=>{setFirst(e.target.value);setSecond('');}}><option value="">You</option>{eligible.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+    <label className="field">Second player<select value={second} onChange={e=>setSecond(e.target.value)}><option value="">Choose a player</option>{eligible.filter(p=>p.id!==first).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
     <label className="field">Date and time <small>{timezone||'no timezone saved'} · local time</small><input type="datetime-local" value={when} onChange={e=>setWhen(e.target.value)}/></label>
     {preview&&<p className="fine-print">{preview}</p>}
     <label className="field">Message <small>Optional</small><input maxLength={500} value={message} onChange={e=>setMessage(e.target.value)}/></label>
@@ -82,15 +95,17 @@ function OrganizeForm({data,timezone,onDone}:{data:Data;timezone?:string;onDone:
     <p className="fine-print">Both players see this proposal. The first player answers, then the second. It appears as confirmed only after both accept the same time.</p>
   </div>;
 }
-function CorrectLoggedPlayers({inv,data,busy,onSave}:{inv:Invitation;data:Data;busy:boolean;onSave:(body:Record<string,unknown>)=>void}){
-  const ranked=data.directory.filter(p=>p.ranked),[first,setFirst]=useState(inv.firstId===data.me.id?(data.me.ranked?data.me.id:''):inv.firstId),[second,setSecond]=useState(inv.secondId),[reason,setReason]=useState('');
-  const options=[...(data.me.ranked?[{id:data.me.id,name:'You'}]:[]),...ranked];
+function CorrectLoggedPlayers({inv,data,busy,onSave,onLinked}:{inv:Invitation;data:Data;busy:boolean;onSave:(body:Record<string,unknown>)=>void;onLinked:()=>void}){
+  const [first,setFirst]=useState(inv.firstId===data.me.id?(data.me.ranked?data.me.id:''):inv.firstId),[second,setSecond]=useState(inv.secondId),[reason,setReason]=useState('');
+  const options=[...(data.me.ranked?[{id:data.me.id,name:'You',ranked:true,eligible:true,reason:null}]:[]),...data.directory];
+  const missingLink=[data.directory.find(p=>p.id===first),data.directory.find(p=>p.id===second)].filter((p):p is DirectoryPlayer=>!!p&&!p.ranked);
   return <details className="schedule-editor"><summary>Correct players for Elo</summary><div className="sched-form">
     <p className="fine-print">Use this if a logged match was assigned to the admin login or the wrong player. The score stays in the same order; the correction is recorded in History.</p>
-    <label className="field">First player<select value={first} onChange={e=>setFirst(e.target.value)}><option value="">Choose a player</option>{options.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
-    <label className="field">Second player<select value={second} onChange={e=>setSecond(e.target.value)}><option value="">Choose a player</option>{options.filter(p=>p.id!==first).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+    <label className="field">First player<select value={first} onChange={e=>setFirst(e.target.value)}><option value="">Choose a player</option>{options.map(p=><option key={p.id} value={p.id}>{p.name}{p.ranked?'':' · Link for Elo'}</option>)}</select></label>
+    <label className="field">Second player<select value={second} onChange={e=>setSecond(e.target.value)}><option value="">Choose a player</option>{options.filter(p=>p.id!==first).map(p=><option key={p.id} value={p.id}>{p.name}{p.ranked?'':' · Link for Elo'}</option>)}</select></label>
+    {missingLink.map(p=><LinkAccountForm key={p.id} person={p} data={data} onDone={onLinked}/>)}
     <label className="field">Reason<input maxLength={500} value={reason} onChange={e=>setReason(e.target.value)} placeholder="Why are these players being corrected?"/></label>
-    <button type="button" className="btn primary" disabled={busy||!first||!second||first===second||reason.trim().length<3||(first===inv.firstId&&second===inv.secondId)} onClick={()=>onSave({action:'reassign',id:inv.id,version:inv.version,firstId:first,secondId:second,reason:reason.trim()})}>Save player correction</button>
+    <button type="button" className="btn primary" disabled={busy||!first||!second||first===second||missingLink.length>0||reason.trim().length<3||(first===inv.firstId&&second===inv.secondId)} onClick={()=>onSave({action:'reassign',id:inv.id,version:inv.version,firstId:first,secondId:second,reason:reason.trim()})}>Save player correction</button>
   </div></details>;
 }
 export default function Friendlies({timezone}:{timezone?:string}){
@@ -139,7 +154,7 @@ export default function Friendlies({timezone}:{timezone?:string}){
         }}>{i.status==='accepted'&&new Date(i.proposedAt).getTime()<=nowMs?'Void played match':'Cancel'}</button>}
       </div>
       {i.status==='accepted'&&new Date(i.proposedAt).getTime()<=nowMs&&<ResultBox key={i.id+(i.result?.at??'')} inv={i} busy={busy} onSave={body=>void send(body)}/>}
-      {data.me.owner&&i.logged&&i.status==='accepted'&&<CorrectLoggedPlayers key={i.id+':'+i.version} inv={i} data={data} busy={busy} onSave={body=>void send(body)}/>}
+      {data.me.owner&&i.logged&&i.status==='accepted'&&<CorrectLoggedPlayers key={i.id+':'+i.version} inv={i} data={data} busy={busy} onSave={body=>void send(body)} onLinked={()=>void load()}/>}
       {i.status==='cancelled'&&i.result&&<p className="fine-print">Voided result: {i.organizerView?i.firstName:'You'} {i.result.mine.goals}–{i.result.theirs.goals} {i.otherName}. It no longer counts toward Elo.</p>}
       {counterFor===i.id&&timeForm('Send counter-proposal',()=>void send({action:'counter',id:i.id,version:i.version,local:when,message}))}
       {events.length>0&&<details className="sched-history"><summary>History ({events.length})</summary><ul>{events.map(e=><li key={e.id}><b>{eventText[e.action]??e.action}</b>{e.proposedAt&&<> · {formatInZone(e.proposedAt,zone)}</>} <span className="fine-print">{e.actorName} · {formatInZone(e.at,zone)}{e.reason?` · ${e.reason}`:''}</span></li>)}</ul></details>}
@@ -151,8 +166,8 @@ export default function Friendlies({timezone}:{timezone?:string}){
     {error&&<p className="inline-error" role="alert">{error}</p>}
     {!data.me.eligible?<p className="notice">{data.me.reason??'Friendlies are not available to you yet.'}</p>:<>
       <details className="schedule-editor" open={!data.invitations.length}><summary>Invite a player</summary>
-        {!data.directory.length&&<div className="notice"><p><b>No one is available to invite yet.</b></p>{data.unavailable?.length?<ul>{data.unavailable.map(u=><li key={u.name}><b>{u.name}</b>: {u.reason}</li>)}</ul>:<p className="fine-print">Other players show up here once they have a finished profile (username, platform, timezone and an in-game ID).</p>}</div>}
-        <label className="field">Player<select value={who} onChange={e=>setWho(e.target.value)}><option value="">Choose a player</option>{data.directory.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+        {!data.directory.some(p=>p.eligible)&&<div className="notice"><p><b>No one is available to invite yet.</b></p>{data.unavailable?.length?<ul>{data.unavailable.map(u=><li key={u.name}><b>{u.name}</b>: {u.reason}</li>)}</ul>:<p className="fine-print">Other players show up here once they have a finished profile (username, platform, timezone and an in-game ID).</p>}</div>}
+        <label className="field">Player<select value={who} onChange={e=>setWho(e.target.value)}><option value="">Choose a player</option>{data.directory.filter(p=>p.eligible).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
         {timeForm('Send invitation',()=>void send({action:'invite',inviteeId:who,local:when,message}),!who)}
         <p className="fine-print">Up to {data.me.maxPending} invitations can be waiting at once. Only you and the invited player can see an invitation.</p>
       </details>
