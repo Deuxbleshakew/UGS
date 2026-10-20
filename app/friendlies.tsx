@@ -4,13 +4,13 @@ import {formatInZone,validTimezone,zonedLocalToUtc,zoneMessages} from '@/lib/tim
 import {api} from './ui';
 import {Avatar} from './avatar-picker';
 
-type Invitation={elo?:{state:'counts'|'waiting'|'earlier'|'none';canConfirm:boolean}|null;logged?:boolean;result?:Result|null;id:string;status:string;proposedAt:string;proposedLocal:string;proposerTimezone:string;message:string|null;version:number;direction:'sent'|'received';myTurn:boolean;proposedByMe:boolean;otherName:string;otherId:string;otherAvatar:number|null};
+type Invitation={elo?:{state:'counts'|'waiting'|'earlier'|'none';canConfirm:boolean}|null;logged?:boolean;result?:Result|null;id:string;status:string;proposedAt:string;proposedLocal:string;proposerTimezone:string;message:string|null;version:number;direction:'sent'|'received';myTurn:boolean;proposedByMe:boolean;otherName:string;otherId:string;otherAvatar:number|null;firstName?:string;organizerProposal?:boolean;organizerView?:boolean;firstResponse?:boolean;waitingFor?:string|null};
 type Ev={id:string;invitationId:string;actorName:string;at:string;action:string;reason:string|null;proposedAt:string|null};
 type Side={goals:number;stars:number|null};
 type Result={mine:Side;theirs:Side;by:string;at:string};
-type Data={unavailable?:{name:string;reason:string}[];now:string;me:{eligible:boolean;reason:string|null;timezone:string;maxPending:number;owner?:boolean};invitations:Invitation[];events:Ev[];directory:{id:string;name:string}[]};
+type Data={unavailable?:{name:string;reason:string}[];now:string;me:{id:string;name:string;eligible:boolean;reason:string|null;timezone:string;maxPending:number;owner?:boolean};invitations:Invitation[];events:Ev[];directory:{id:string;name:string}[]};
 const statusText:Record<string,string>={pending:'Waiting for an answer',accepted:'Accepted',declined:'Declined',cancelled:'Cancelled',expired:'Expired'};
-const eventText:Record<string,string>={logged:'Logged after the fact',invited:'Invited',countered:'Counter-proposed',accepted:'Accepted',declined:'Declined',cancelled:'Cancelled',expired:'Expired'};
+const eventText:Record<string,string>={logged:'Logged after the fact',invited:'Invited',organized:'Organizer proposed',agreed:'First player accepted',countered:'Counter-proposed',accepted:'Accepted',declined:'Declined',cancelled:'Cancelled',expired:'Expired'};
 
 const STAR_OPTIONS=Array.from({length:10},(_,i)=>(i+1)/2);
 function ResultBox({inv,busy,onSave}:{inv:Invitation;busy:boolean;onSave:(body:Record<string,unknown>)=>void}){
@@ -20,10 +20,10 @@ function ResultBox({inv,busy,onSave}:{inv:Invitation;busy:boolean;onSave:(body:R
   const starPick=(label:string,v:string,set:(x:string)=>void)=><label className="field">{label}<select value={v} onChange={e=>set(e.target.value)}><option value="">Not set</option>{STAR_OPTIONS.map(o=><option key={o} value={o}>{o} ★</option>)}</select></label>;
   const show=(side:Side)=>side.stars==null?'':` (${side.stars} ★)`;
   return <div className="friendly-result">
-    {r&&<p className="friendly-score"><b>You {r.mine.goals}{show(r.mine)} – {r.theirs.goals}{show(r.theirs)} {inv.otherName}</b> <span className="fine-print">entered by {r.by}</span></p>}
+    {r&&<p className="friendly-score"><b>{inv.organizerView?inv.firstName:'You'} {r.mine.goals}{show(r.mine)} – {r.theirs.goals}{show(r.theirs)} {inv.otherName}</b> <span className="fine-print">entered by {r.by}</span></p>}
     {r&&inv.elo&&<p className={'friendly-elo friendly-elo-'+inv.elo.state}>{inv.elo.state==='counts'?'Counts for Elo (half weight)':inv.elo.state==='waiting'?(inv.elo.canConfirm?`${inv.otherName} entered this score. Confirm it and it counts for Elo.`:`Waiting for ${inv.otherName} to confirm this score. It counts for Elo once they do.`):inv.elo.state==='earlier'?'Played before friendlies counted for Elo':''}</p>}
-    {r&&inv.elo?.canConfirm&&!open&&<button type="button" className="btn primary" disabled={busy} onClick={()=>onSave({action:'result',id:inv.id,myGoals:r.mine.goals,theirGoals:r.theirs.goals,myStars:r.mine.stars,theirStars:r.theirs.stars})}>Confirm score</button>}
-    {!open?<button type="button" className="btn secondary" onClick={()=>setOpen(true)}>{r?'Correct result':'Add result'}</button>:<div className="sched-form">
+    {!inv.organizerView&&r&&inv.elo?.canConfirm&&!open&&<button type="button" className="btn primary" disabled={busy} onClick={()=>onSave({action:'result',id:inv.id,myGoals:r.mine.goals,theirGoals:r.theirs.goals,myStars:r.mine.stars,theirStars:r.theirs.stars})}>Confirm score</button>}
+    {inv.organizerView?null:!open?<button type="button" className="btn secondary" onClick={()=>setOpen(true)}>{r?'Correct result':'Add result'}</button>:<div className="sched-form">
       <label className="field">Your goals<input inputMode="numeric" maxLength={2} value={mine} onChange={e=>setMine(num(e.target.value))}/></label>
       <label className="field">{inv.otherName}’s goals<input inputMode="numeric" maxLength={2} value={theirs} onChange={e=>setTheirs(num(e.target.value))}/></label>
       {starPick('Your team stars',ms,setMs)}{starPick(`${inv.otherName}’s team stars`,ts,setTs)}
@@ -59,6 +59,29 @@ function LogForm({data,timezone,onDone}:{data:Data;timezone?:string;onDone:()=>v
     <p className="fine-print">For a game that is already over. It shows in both players’ history and counts for Elo at half weight once the other player confirms the score. Either player can correct the score later.</p>
   </div>;
 }
+function OrganizeForm({data,timezone,onDone}:{data:Data;timezone?:string;onDone:()=>void}){
+  const [first,setFirst]=useState(''),[second,setSecond]=useState(''),[when,setWhen]=useState(''),[message,setMessage]=useState('');
+  const [busy,setBusy]=useState(false),[error,setError]=useState('');
+  const preview=when&&timezone?(()=>{const r=zonedLocalToUtc(when,timezone);return r.ok?`= ${formatInZone(r.utc,'UTC')}`:zoneMessages[r.reason];})():'';
+  async function save(){
+    setBusy(true);setError('');
+    try{
+      await api('friendlies',{action:'organize',firstId:first||data.me.id,secondId:second,local:when,message});
+      setFirst('');setSecond('');setWhen('');setMessage('');onDone();
+    }catch(e){setError((e as Error).message);}finally{setBusy(false);}
+  }
+  return <div className="sched-form">
+    {!timezone&&<p className="notice warning">Set your timezone in My Profile first. Times you enter are read in your profile timezone.</p>}
+    <label className="field">First player<select value={first} onChange={e=>{setFirst(e.target.value);setSecond('');}}><option value="">You</option>{data.directory.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+    <label className="field">Second player<select value={second} onChange={e=>setSecond(e.target.value)}><option value="">Choose a player</option>{data.directory.filter(p=>p.id!==first).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+    <label className="field">Date and time <small>{timezone||'no timezone saved'} · local time</small><input type="datetime-local" value={when} onChange={e=>setWhen(e.target.value)}/></label>
+    {preview&&<p className="fine-print">{preview}</p>}
+    <label className="field">Message <small>Optional</small><input maxLength={500} value={message} onChange={e=>setMessage(e.target.value)}/></label>
+    {error&&<p className="inline-error" role="alert">{error}</p>}
+    <button type="button" className="btn primary" disabled={busy||!second||!when||!timezone} onClick={()=>void save()}>{busy?'Sending…':'Ask both players to accept'}</button>
+    <p className="fine-print">Both players see this proposal. The first player answers, then the second. It appears as confirmed only after both accept the same time.</p>
+  </div>;
+}
 export default function Friendlies({timezone}:{timezone?:string}){
   const [data,setData]=useState<Data|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false);
   const [who,setWho]=useState(''),[when,setWhen]=useState(''),[message,setMessage]=useState(''),[counterFor,setCounterFor]=useState<string|null>(null);
@@ -86,11 +109,12 @@ export default function Friendlies({timezone}:{timezone?:string}){
   const card=(i:Invitation)=>{
     const events=data.events.filter(e=>e.invitationId===i.id);
     return <div className="sched-card" key={i.id}>
-      <p className="friendly-head"><Avatar id={i.otherId} name={i.otherName} version={i.otherAvatar} size={32}/><span><b>{i.logged?(i.proposedByMe?`Played with ${i.otherName}`:`${i.otherName} logged a game with you`):i.direction==='sent'?`You invited ${i.otherName}`:`${i.otherName} invited you`}</b> · {i.logged?'Logged after the fact':statusText[i.status]??i.status}</span></p>
+      <p className="friendly-head"><Avatar id={i.otherId} name={i.otherName} version={i.otherAvatar} size={32}/><span><b>{i.organizerView?`You arranged ${i.firstName} vs ${i.otherName}`:i.organizerProposal?`Organizer arranged your friendly with ${i.otherName}`:i.logged?(i.proposedByMe?`Played with ${i.otherName}`:`${i.otherName} logged a game with you`):i.direction==='sent'?`You invited ${i.otherName}`:`${i.otherName} invited you`}</b> · {i.logged?'Logged after the fact':statusText[i.status]??i.status}</span></p>
       <p>{formatInZone(i.proposedAt,zone)} <span className="fine-print">({formatInZone(i.proposedAt,'UTC')})</span></p>
       {i.proposerTimezone!==zone&&<p className="fine-print">Entered as {i.proposedLocal.replace('T',' ')} {i.proposerTimezone}.</p>}
       {i.message&&<p className="fine-print">“{i.message}”</p>}
-      {i.status==='pending'&&!i.myTurn&&<p className="fine-print">Waiting for {i.otherName} to answer.</p>}
+      {i.organizerProposal&&i.status==='pending'&&i.myTurn&&!i.firstResponse&&<p className="fine-print">Accepting sends this time to {i.otherName} for their approval. The match is not confirmed yet.</p>}
+      {i.status==='pending'&&!i.myTurn&&<p className="fine-print">Waiting for {i.waitingFor||i.otherName} to answer.{i.organizerProposal&&!i.firstResponse?' Both players must accept.':''}</p>}
       <div className="sched-actions">
         {i.status==='pending'&&i.myTurn&&<>
           <button type="button" className="btn primary" disabled={busy} onClick={()=>void send({action:'accept',id:i.id,version:i.version})}>Accept</button>
@@ -115,6 +139,7 @@ export default function Friendlies({timezone}:{timezone?:string}){
         {timeForm('Send invitation',()=>void send({action:'invite',inviteeId:who,local:when,message}),!who)}
         <p className="fine-print">Up to {data.me.maxPending} invitations can be waiting at once. Only you and the invited player can see an invitation.</p>
       </details>
+      {data.me.owner&&<details className="schedule-editor"><summary>Arrange a friendly for two players</summary><OrganizeForm data={data} timezone={timezone} onDone={()=>void load()}/></details>}
       <details className="schedule-editor"><summary>Log a game you already played</summary><LogForm data={data} timezone={timezone} onDone={()=>void load()}/></details>
       {waiting.length>0&&<><h3>Needs your answer</h3>{waiting.map(card)}</>}
       <h3>Upcoming and waiting</h3>

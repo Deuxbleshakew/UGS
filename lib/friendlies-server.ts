@@ -88,6 +88,7 @@ const note=z.string().trim().max(500).optional();
 const starValue=z.number().min(0.5).max(5).refine(n=>Number.isInteger(n*2),'Stars go in steps of 0.5.').nullable();
 const actionSchema=z.discriminatedUnion('action',[
   z.object({action:z.literal('invite'),inviteeId:z.string().min(1).max(100),local,message:note}),
+  z.object({action:z.literal('organize'),firstId:z.string().min(1).max(100),secondId:z.string().min(1).max(100),local,message:note}),
   z.object({action:z.literal('accept'),id:z.string(),version:z.number().int()}),
   z.object({action:z.literal('decline'),id:z.string(),version:z.number().int(),message:note}),
   z.object({action:z.literal('counter'),id:z.string(),version:z.number().int(),local,message:note}),
@@ -114,6 +115,22 @@ export function friendlyAction(actor:Actor,input:unknown){
       d.prepare("INSERT INTO friendly_invitations(id,inviter_id,invitee_id,pair_key,status,proposed_at,proposed_local,proposer_timezone,proposed_by,turn_id,message,created_at,updated_at) VALUES(?,?,?,?,'pending',?,?,?,?,?,?,?,?)").run(id,actor.userId,data.inviteeId,pairKey(actor.userId,data.inviteeId),at,data.local,me.timezone,actor.userId,data.inviteeId,data.message||null,t,t);
       event(d,id,who,'invited',data.message||null,at);return {ok:true,id};
     }
+    if(data.action==='organize'){
+      if(profileOf(actor.userId)?.a.owner!==1)fail('Only the organizer can arrange a friendly for other players.',403);
+      if(data.firstId===data.secondId)fail('Choose two different players.');
+      if(!eligibility(data.firstId).ok||!eligibility(data.secondId).ok)fail('Both players must be available for friendlies.',404);
+      const at=toUtc(data.local,me.timezone),pair=pairKey(data.firstId,data.secondId);
+      if(d.prepare("SELECT 1 FROM friendly_invitations WHERE pair_key=? AND status='pending'").get(pair))fail('These players already have a pending friendly. Finish or cancel it first.',409);
+      checkTime(d,data.firstId,data.secondId,at,null);
+      const id=uid(),t=nowIso();
+      // The first player answers first. The invitation table requires
+      // proposed_by and turn_id to be different participants.
+      d.prepare("INSERT INTO friendly_invitations(id,inviter_id,invitee_id,pair_key,status,proposed_at,proposed_local,proposer_timezone,proposed_by,turn_id,message,created_at,updated_at) VALUES(?,?,?,?,'pending',?,?,?,?,?,?,?,?)")
+        .run(id,data.firstId,data.secondId,pair,at,data.local,me.timezone,data.secondId,data.firstId,data.message||null,t,t);
+      d.prepare('INSERT INTO friendly_organizer_proposals(invitation_id,created_by) VALUES(?,?)').run(id,actor.userId);
+      event(d,id,who,'organized',data.message||null,at);
+      return {ok:true,id};
+    }
     if(data.action==='log'){
       // A friendly that was already played: recorded straight away as an accepted game with its score. No invitation, no waiting.
       // Counts for Elo once the other player confirms the score (or straight away when the organizer logs it for two other players). The organizer may log a game between two other players.
@@ -132,7 +149,9 @@ export function friendlyAction(actor:Actor,input:unknown){
       return {ok:true,id};
     }
     const inv=d.prepare('SELECT * FROM friendly_invitations WHERE id=?').get(data.id) as Inv|undefined;
-    if(!inv||(inv.inviter_id!==actor.userId&&inv.invitee_id!==actor.userId))return fail('Invitation not found.',404);
+    const organizer=inv?d.prepare('SELECT created_by,first_response FROM friendly_organizer_proposals WHERE invitation_id=?').get(inv.id) as {created_by:string;first_response:number}|undefined:undefined;
+    const participant=!!inv&&(inv.inviter_id===actor.userId||inv.invitee_id===actor.userId);
+    if(!inv||(!participant&&!(data.action==='cancel'&&organizer?.created_by===actor.userId)))return fail('Invitation not found.',404);
     if(data.action==='result'){
       // A result is a score and the stars of each team. It counts for Elo once the other player enters or confirms the same score. The latest entry wins, so either player can correct a typo.
       if(inv.status!=='accepted')fail('Only an accepted friendly can have a result.',409);
@@ -163,6 +182,12 @@ export function friendlyAction(actor:Actor,input:unknown){
         return {fail:'That time has passed, so the invitation expired.',status:409};
       }
       checkTime(d,actor.userId,other,inv.proposed_at,inv.id);
+      if(organizer&&!organizer.first_response){
+        d.prepare('UPDATE friendly_organizer_proposals SET first_response=1 WHERE invitation_id=?').run(inv.id);
+        d.prepare('UPDATE friendly_invitations SET proposed_by=?,turn_id=?,version=version+1,updated_at=? WHERE id=?').run(actor.userId,other,nowIso(),inv.id);
+        event(d,inv.id,who,'agreed',null,inv.proposed_at);
+        return {ok:true};
+      }
       d.prepare("UPDATE friendly_invitations SET status='accepted',turn_id=NULL,version=version+1,updated_at=? WHERE id=?").run(nowIso(),inv.id);
       event(d,inv.id,who,'accepted',null,inv.proposed_at);return {ok:true};
     }
@@ -170,6 +195,7 @@ export function friendlyAction(actor:Actor,input:unknown){
     const at=toUtc(data.local,me.timezone);
     if(at===inv.proposed_at)fail('Counter with a different time.');
     checkTime(d,actor.userId,other,at,inv.id);
+    if(organizer&&!organizer.first_response)d.prepare('UPDATE friendly_organizer_proposals SET first_response=1 WHERE invitation_id=?').run(inv.id);
     d.prepare("UPDATE friendly_invitations SET proposed_at=?,proposed_local=?,proposer_timezone=?,proposed_by=?,turn_id=?,message=?,version=version+1,updated_at=? WHERE id=?").run(at,data.local,me.timezone,actor.userId,other,data.message||null,nowIso(),inv.id);
     event(d,inv.id,who,'countered',data.message||null,at);return {ok:true};
   });
@@ -179,9 +205,11 @@ export function friendlyAction(actor:Actor,input:unknown){
 /** Everything the Friendlies page needs: the caller's own invitations, their history, and the people they can invite. */
 export function getFriendlies(actor:Actor){
   expireStale();const d=db(),me=eligibility(actor.userId);
-  const rows=d.prepare('SELECT * FROM friendly_invitations WHERE inviter_id=? OR invitee_id=? ORDER BY created_at DESC').all(actor.userId,actor.userId) as Inv[];
+  const rows=d.prepare('SELECT * FROM friendly_invitations WHERE inviter_id=? OR invitee_id=? OR id IN (SELECT invitation_id FROM friendly_organizer_proposals WHERE created_by=?) ORDER BY created_at DESC').all(actor.userId,actor.userId,actor.userId) as Inv[];
   const name=(id:string)=>eligibility(id).name||'Player';
-  const invitationsBase=rows.map(i=>{const other=i.inviter_id===actor.userId?i.invitee_id:i.inviter_id;return {id:i.id,status:i.status,proposedAt:i.proposed_at,proposedLocal:i.proposed_local,proposerTimezone:i.proposer_timezone,message:i.message,version:i.version,createdAt:i.created_at,updatedAt:i.updated_at,direction:i.inviter_id===actor.userId?'sent':'received',myTurn:i.turn_id===actor.userId,proposedByMe:i.proposed_by===actor.userId,otherName:name(other),otherId:other,otherAvatar:avatarVersion(other)};});
+  const organized=rows.length?d.prepare(`SELECT invitation_id,first_response FROM friendly_organizer_proposals WHERE invitation_id IN (${rows.map(()=>'?').join(',')})`).all(...rows.map(r=>r.id)) as {invitation_id:string;first_response:number}[]:[];
+  const organizedMap=new Map(organized.map(r=>[r.invitation_id,r.first_response]));
+  const invitationsBase=rows.map(i=>{const organizerView=i.inviter_id!==actor.userId&&i.invitee_id!==actor.userId,other=i.inviter_id===actor.userId?i.invitee_id:i.inviter_id;return {id:i.id,status:i.status,proposedAt:i.proposed_at,proposedLocal:i.proposed_local,proposerTimezone:i.proposer_timezone,message:i.message,version:i.version,createdAt:i.created_at,updatedAt:i.updated_at,direction:i.inviter_id===actor.userId?'sent':'received',myTurn:i.turn_id===actor.userId,proposedByMe:i.proposed_by===actor.userId,otherName:name(other),otherId:other,otherAvatar:avatarVersion(other),firstName:name(i.inviter_id),organizerProposal:organizedMap.has(i.id),organizerView,firstResponse:!!organizedMap.get(i.id),waitingFor:i.status==='pending'?name(i.turn_id??''):null};});
   const ids=rows.map(r=>r.id),marks=ids.map(()=>'?').join(',');
   const events=ids.length?d.prepare(`SELECT id,invitation_id AS invitationId,actor_name AS actorName,at,action,reason,proposed_at AS proposedAt FROM friendly_events WHERE invitation_id IN (${marks}) AND action<>'result' ORDER BY at,rowid`).all(...ids):[];
   const resultRows=ids.length?d.prepare(`SELECT invitation_id AS id,actor_name AS actorName,at,reason FROM friendly_events WHERE invitation_id IN (${marks}) AND action='result' ORDER BY at,rowid`).all(...ids) as {id:string;actorName:string;at:string;reason:string}[]:[];
@@ -190,7 +218,7 @@ export function getFriendlies(actor:Actor){
   const loggedIds=new Set((events as unknown as {invitationId:string;action:string}[]).filter(e=>e.action==='logged').map(e=>e.invitationId));
   const eloStates=evaluateFriendlies();
   const invitations=invitationsBase.map(i=>{
-    const r=results.get(i.id),mine=rows.find(x=>x.id===i.id)!.inviter_id===actor.userId;
+    const r=results.get(i.id),mine=i.organizerView||rows.find(x=>x.id===i.id)!.inviter_id===actor.userId;
     const ev=eloStates.get(i.id);
     return {...i,logged:loggedIds.has(i.id),elo:ev?{state:ev.state,canConfirm:ev.state==='waiting'&&ev.needs===actor.userId}:null,result:r?{mine:mine?r.inviter:r.invitee,theirs:mine?r.invitee:r.inviter,by:r.by,at:r.at}:null};
   });
@@ -202,5 +230,5 @@ export function getFriendlies(actor:Actor){
     const p=profileOf(a.id),missing=p&&e.reason==='Finish your profile first.'?missingProfile(p.data,p.a.username,true):[];
     return {name:e.name||p?.a.name||'',reason:missing.length?`Profile missing: ${missing.map(m=>m==='Ask the owner to assign your username'?'username (assign it in User Access)':m.toLowerCase()).join(', ')}`:(e.reason??'Not available')};
   }).filter((x):x is {name:string;reason:string}=>!!x&&!!x.name).sort((a,b)=>a.name.localeCompare(b.name)):[];
-  return {now:nowIso(),me:{eligible:me.ok,reason:me.reason??null,timezone:me.timezone,maxPending:MAX_PENDING_OUT,owner:isOwner},invitations,events,directory,unavailable};
+  return {now:nowIso(),me:{id:actor.userId,name:me.name,eligible:me.ok,reason:me.reason??null,timezone:me.timezone,maxPending:MAX_PENDING_OUT,owner:isOwner},invitations,events,directory,unavailable};
 }
