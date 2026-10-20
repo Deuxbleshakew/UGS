@@ -30,6 +30,11 @@ function record(d:DatabaseSync,actor:Actor,target:string|null,username:string|nu
 }
 export function isDisabled(accountId:string){return !!db().prepare('SELECT 1 FROM account_status WHERE account_id=?').get(accountId);}
 
+export function accountActivity(actor:Actor){
+  const d=db();requireOwner(d,actor);
+  return d.prepare('SELECT id,username,action,created_at AS at FROM account_access_audit WHERE actor_id=? ORDER BY created_at DESC').all(actor.userId);
+}
+
 
 /** Close a person's open friendlies and withdraw their waiting kickoff proposals. Used when someone can no longer act (disabled, or no longer taking part). */
 export function closeOpenActivity(d:DatabaseSync,accountId:string,actor:Actor,friendlyReason:string,proposalReason:string){

@@ -1,7 +1,8 @@
 import Image from 'next/image';
 import {ArrowRight, CalendarDays, Gamepad2, Globe2, Shield, Trophy, Users} from 'lucide-react';
 import type {AppState} from './ui';
-import {RulesGuide, HistoryView} from './guide-history';
+import {RulesGuide} from './guide-history';
+import HistoryHub from './history-hub';
 import TiquiciaRoster from './tiquicia-roster';
 import NextAction from './next-action';
 import {ugsViews, viewHref, type UgsView} from './ugs-navigation';
@@ -20,7 +21,7 @@ const plannedCopy: Partial<Record<UgsView, {title: string; description: string}>
 
 export default function UgsSections({view, state, onNavigate, onDialog}: Props) {
   if (view === 'guide') return <RulesGuide state={state} />;
-  if (view === 'history') return state?.member?.role === 'admin' ? <HistoryView state={state} /> : <section className="panel ugs-planned-page"><h2>History is for organizers</h2><p>This page is only available to the admin account.</p><a className="btn primary" href={viewHref('matchroom')}>Back to competitions <ArrowRight size={16} /></a></section>;
+  if (view === 'history') return <HistoryHub state={state}/>;
   const planned = plannedCopy[view];
   if (planned) return <section className="panel ugs-planned-page">
     <span className="ugs-planned-label">Planned · not available yet</span>

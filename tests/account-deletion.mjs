@@ -11,7 +11,7 @@ try{
   const bundle=path.join(dir,'user-management.mjs');
   await build({entryPoints:['lib/user-management.ts'],bundle:true,platform:'node',format:'esm',packages:'external',outfile:bundle});
   const {database}=await import('../scripts/local-store.mjs');
-  const {deleteAccount}=await import(pathToFileURL(bundle).href);
+  const {deleteAccount,accountActivity}=await import(pathToFileURL(bundle).href);
   db=database();
   const insertAccount=(id,owner=0)=>db.prepare('INSERT INTO accounts(id,email,name,password_hash,owner,created_at) VALUES(?,?,?,?,?,?)').run(id,'',id,'hash',owner,'now');
   insertAccount('owner',1);insertAccount('player');insertAccount('opponent');
@@ -44,6 +44,8 @@ try{
   assert.equal(db.prepare("SELECT 1 FROM friendly_invitations WHERE id='other-friendly'").get()!=null,true);
   assert.equal(db.prepare("SELECT 1 FROM friendly_events WHERE id='other-event'").get(),undefined);
   assert.equal(db.prepare("SELECT 1 FROM community_players WHERE id='p-opponent'").get()!=null,true);
+  assert.throws(()=>accountActivity({userId:'opponent',displayName:'opponent'}));
+  assert.equal(accountActivity({userId:'owner',displayName:'owner'}).some(event=>event.action==='delete-account'),true);
   assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
   console.log('PASS: owner permanently deletes linked account, player, games and credentials without orphaned references.');
 }finally{db?.close();fs.rmSync(dir,{recursive:true,force:true});}

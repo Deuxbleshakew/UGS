@@ -19,7 +19,7 @@ import {getFriendlies,friendlyAction} from './friendlies-server';
 import {maskUndrawnManagers} from './draw-privacy';
 import {photoVersions,getPlayerPhoto,setPlayerPhoto} from './player-photos';
 import {getAvatar,avatarInfo,saveAvatar,removeAvatar,AVATAR_UPLOAD_LIMIT} from './avatar-server';
-import {disableAccount,enableAccount,deleteAccount,removeMember} from './user-management';
+import {disableAccount,enableAccount,deleteAccount,accountActivity,removeMember} from './user-management';
 import {listSquads,saveSquad,deleteSquad,setSquadsOpen} from './squads';
 import {listTiquicia,changeTiquicia} from './tiquicia';
 import {createTeamPlayoff,recordTeamTie,simulateTeamPlayoff,cancelTeamPlayoff,getTeamPlayoff} from './team-playoffs';
@@ -174,6 +174,10 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
       if(request.method!=='POST')fail('Method not allowed.',405);
       return json(decideParticipation(user,await body(request)));
     }
+    if(path[0]==='accounts'&&path[1]==='history'&&path.length===2){
+      if(request.method!=='GET')fail('Method not allowed.',405);
+      return json({events:accountActivity(user)});
+    }
     if(path[0]==='accounts'&&path.length===2&&['disable','enable','delete'].includes(path[1])){
       if(request.method!=='POST')fail('Method not allowed.',405);
       const input=await body(request);return json(path[1]==='disable'?disableAccount(user,input):path[1]==='enable'?enableAccount(user,input):deleteAccount(user,input));
@@ -249,6 +253,11 @@ export async function handle(request:Request,path:string[]):Promise<Response>{
     ensurePlayers(t.owner_id);
     Object.assign(m,await membership(user,tid));
     const c=configSchema.parse(JSON.parse(t.config));
+    if(path.length===3&&path[2]==='history'){
+      if(request.method!=='GET')fail('Method not allowed.',405);
+      admin(m);
+      return json({events:await all('SELECT id,actor_name,at,action,reason,"before","after" FROM audit WHERE tournament_id=? ORDER BY at DESC',tid)});
+    }
     if(path[2]==="export"&&request.method==="GET"){
       admin(m);
       const fs=await getFixtures(tid),kind=url.searchParams.get("kind")??"matches";

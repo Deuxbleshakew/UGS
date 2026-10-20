@@ -457,3 +457,5 @@ ol.gh-list{list-style:decimal}
 .sq-card b,.sq-card>span:last-child{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sq-rolecard:focus-visible,.sq-playerchoice:focus-visible,.sq-card:focus-visible{outline:2px solid #e3a33b;outline-offset:2px}
 @media(max-width:850px){.sq-workspace{display:flex;flex-direction:column}.sq-workspace .sq-edit{order:-1;position:static;max-height:none;overflow:visible;width:100%}.sq-workspace .sq-pitch{width:100%}.sq-playergrid{grid-template-columns:repeat(auto-fill,minmax(105px,1fr))}}
+.history-hub .tabs{display:flex;flex-wrap:wrap;gap:.35rem}
+.history-hub .audit-row small{display:block;color:var(--muted);margin-top:.35rem}

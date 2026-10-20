@@ -26,7 +26,7 @@ export const ugsViews: Record<UgsView, ViewDefinition> = {
   awards: {label: 'Awards', path: 'matchroom/club-champions/awards', description: 'The honours earned in your selected tournament.', section: 'matchroom'},
   elo: {label: 'Players', path: 'matchroom/players', description: 'Human-player Elo rankings across the organizer’s tournaments.', section: 'matchroom'},
   friendlies: {label: 'Friendlies', path: 'matchroom/friendlies', description: 'Invite another player to a casual match.', section: 'matchroom'},
-  history: {label: 'History', path: 'matchroom/history', description: 'A future home for published seasons and community highlights.', section: 'matchroom'},
+  history: {label: 'History', path: 'matchroom/history', description: 'Saved tournament results, friendlies and organizer activity.', section: 'matchroom'},
   tiquicia: {label: 'RB Tiquicia', path: 'rb-tiquicia', description: 'Our community’s Pro Clubs team.', section: 'ugs'},
   profile: {label: 'My Profile', path: 'profile', description: 'Your followed teams and gaming details.', section: 'ugs'},
   admin: {label: 'Admin', path: 'admin', description: 'Owner tools for your tournaments and player access.', section: 'admin'},

@@ -3,6 +3,7 @@ import {useCallback,useEffect,useState} from 'react';
 import {formatInZone,validTimezone,zonedLocalToUtc,zoneMessages} from '@/lib/timezone';
 import {api} from './ui';
 import {Avatar} from './avatar-picker';
+import {viewHref} from './ugs-navigation';
 
 type Invitation={elo?:{state:'counts'|'waiting'|'earlier'|'none';canConfirm:boolean}|null;logged?:boolean;ratingIssue?:string|null;result?:Result|null;id:string;status:string;proposedAt:string;proposedLocal:string;proposerTimezone:string;message:string|null;version:number;direction:'sent'|'received';myTurn:boolean;proposedByMe:boolean;otherName:string;otherId:string;otherAvatar:number|null;firstId:string;secondId:string;firstName?:string;organizerProposal?:boolean;organizerView?:boolean;firstResponse?:boolean;waitingFor?:string|null};
 type Ev={id:string;invitationId:string;actorName:string;at:string;action:string;reason:string|null;proposedAt:string|null};
@@ -108,7 +109,7 @@ function CorrectLoggedPlayers({inv,data,busy,onSave,onLinked}:{inv:Invitation;da
     <button type="button" className="btn primary" disabled={busy||!first||!second||first===second||missingLink.length>0||reason.trim().length<3||(first===inv.firstId&&second===inv.secondId)} onClick={()=>onSave({action:'reassign',id:inv.id,version:inv.version,firstId:first,secondId:second,reason:reason.trim()})}>Save player correction</button>
   </div></details>;
 }
-export default function Friendlies({timezone}:{timezone?:string}){
+export default function Friendlies({timezone,mode='active'}:{timezone?:string;mode?:'active'|'history'}){
   const [data,setData]=useState<Data|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false);
   const [who,setWho]=useState(''),[when,setWhen]=useState(''),[message,setMessage]=useState(''),[counterFor,setCounterFor]=useState<string|null>(null);
   const zone=timezone&&validTimezone(timezone)?timezone:Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -157,9 +158,10 @@ export default function Friendlies({timezone}:{timezone?:string}){
       {data.me.owner&&i.logged&&i.status==='accepted'&&<CorrectLoggedPlayers key={i.id+':'+i.version} inv={i} data={data} busy={busy} onSave={body=>void send(body)} onLinked={()=>void load()}/>}
       {i.status==='cancelled'&&i.result&&<p className="fine-print">Voided result: {i.organizerView?i.firstName:'You'} {i.result.mine.goals}–{i.result.theirs.goals} {i.otherName}. It no longer counts toward Elo.</p>}
       {counterFor===i.id&&timeForm('Send counter-proposal',()=>void send({action:'counter',id:i.id,version:i.version,local:when,message}))}
-      {events.length>0&&<details className="sched-history"><summary>History ({events.length})</summary><ul>{events.map(e=><li key={e.id}><b>{eventText[e.action]??e.action}</b>{e.proposedAt&&<> · {formatInZone(e.proposedAt,zone)}</>} <span className="fine-print">{e.actorName} · {formatInZone(e.at,zone)}{e.reason?` · ${e.reason}`:''}</span></li>)}</ul></details>}
+      {mode==='history'&&events.length>0&&<details className="sched-history"><summary>Activity ({events.length})</summary><ul>{events.map(e=><li key={e.id}><b>{eventText[e.action]??e.action}</b>{e.proposedAt&&<> · {formatInZone(e.proposedAt,zone)}</>} <span className="fine-print">{e.actorName} · {formatInZone(e.at,zone)}{e.reason?` · ${e.reason}`:''}</span></li>)}</ul></details>}
     </div>;
   };
+  if(mode==='history')return <section className="panel friendlies-panel"><h2>Friendly match history</h2><p className="fine-print">Played, cancelled and expired friendlies are saved here. Confirm scores or correct a logged result from its match card.</p>{error&&<p className="inline-error" role="alert">{error}</p>}{history.length?history.map(card):<p className="fine-print">No past friendlies yet.</p>}</section>;
   return <section className="panel friendlies-panel" aria-labelledby="friendlies-heading">
     <h2 id="friendlies-heading" className="visually-hidden">Friendlies</h2>
     <p className="fine-print">Casual matches between two players. After you play, add the score and each team’s stars. Once both players agree on the score it counts for Elo at half weight. No standings, awards or proof. Times show in {zone}.{data.me.owner?' As organizer, you can see every friendly and void a played match with a reason.':''}</p>
@@ -176,8 +178,7 @@ export default function Friendlies({timezone}:{timezone?:string}){
       {waiting.length>0&&<><h3>Needs your answer</h3>{waiting.map(card)}</>}
       <h3>Upcoming and waiting</h3>
       {active.filter(i=>!i.myTurn).length?active.filter(i=>!i.myTurn).map(card):<p className="fine-print">No upcoming friendlies.</p>}
-      <h3>History</h3>
-      {history.length?history.map(card):<p className="fine-print">Nothing here yet.</p>}
+      <p className="fine-print">Past matches and their activity are in <a href={viewHref('history')}>History</a>.</p>
     </>}
   </section>;
 }
