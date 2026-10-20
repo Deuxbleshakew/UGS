@@ -44,10 +44,14 @@ export function evaluateFriendlies():Map<string,Evaluated&{home:string;away:stri
 }
 
 /** Elo results for the friendlies that count, with account ids swapped for player ids. */
-export function friendlyEloResults():EloResult[]{
+export function friendlyPlayerIds():Map<string,string>{
   const d=database() as DatabaseSync,map=new Map<string,string>();
-  for(const r of d.prepare('SELECT account_id AS a,player_id AS p FROM account_usernames WHERE account_id IS NOT NULL AND player_id IS NOT NULL').all() as {a:string;p:string}[])map.set(r.a,r.p);
-  for(const r of d.prepare('SELECT user_id AS a,player_id AS p FROM members WHERE user_id IS NOT NULL AND player_id IS NOT NULL').all() as {a:string;p:string}[])if(!map.has(r.a))map.set(r.a,r.p);
+  for(const r of d.prepare('SELECT u.account_id AS a,u.player_id AS p FROM account_usernames u JOIN community_players p ON p.id=u.player_id WHERE u.account_id IS NOT NULL').all() as {a:string;p:string}[])map.set(r.a,r.p);
+  for(const r of d.prepare('SELECT m.user_id AS a,m.player_id AS p FROM members m JOIN community_players p ON p.id=m.player_id WHERE m.user_id IS NOT NULL').all() as {a:string;p:string}[])if(!map.has(r.a))map.set(r.a,r.p);
+  return map;
+}
+export function friendlyEloResults():EloResult[]{
+  const map=friendlyPlayerIds();
   const out:EloResult[]=[];
   for(const {result} of evaluateFriendlies().values()){
     if(!result)continue;const home=map.get(result.home),away=map.get(result.away);

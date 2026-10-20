@@ -79,8 +79,8 @@ export function communityRankings(ownerId:string){
   const placeholders=new Set(rows<{player_id:string}>(`SELECT l.player_id FROM player_links l JOIN tournaments t ON t.id=l.tournament_id WHERE t.owner_id=?
     AND NOT EXISTS(SELECT 1 FROM members m WHERE m.player_id=l.player_id AND m.user_id IS NOT NULL)
     AND NOT EXISTS(SELECT 1 FROM members m JOIN player_links l2 ON l2.tournament_id=m.tournament_id AND l2.manager_id=m.manager_id WHERE l2.player_id=l.player_id AND m.user_id IS NOT NULL)`,ownerId).map(r=>r.player_id));
-  const rated=new Set(events.flatMap(e=>[e.home,e.away]));
   events.push(...friendlyEloResults());
+  const rated=new Set(events.flatMap(e=>[e.home,e.away]));
   // People the organizer marked as "just following" stay out of the table, but their results still count for opponents.
   const table=eloRankings(listPlayers(ownerId).filter(p=>!placeholders.has(p.id)||rated.has(p.id)||p.in_tournament===0),events);
   return table.filter(p=>p.in_tournament!==0).map((p,i)=>({...p,rank:i+1}));

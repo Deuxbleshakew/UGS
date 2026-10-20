@@ -5,22 +5,30 @@ import {pathToFileURL} from 'node:url';
 import {build} from 'esbuild';
 
 const root=process.cwd(),dir=fs.mkdtempSync(path.join(root,'.test-friendly-organizer-'));
-const bundle=path.join(dir,'friendlies.mjs');
+const bundle=path.join(dir,'friendlies.mjs'),competitionBundle=path.join(dir,'competition.mjs');
 process.env.MATCHROOM_DATA_DIR=dir;
+let testDb;
 try{
   await build({entryPoints:['lib/friendlies-server.ts'],bundle:true,platform:'node',format:'esm',packages:'external',outfile:bundle});
+  await build({entryPoints:['lib/competition-server.ts'],bundle:true,platform:'node',format:'esm',packages:'external',outfile:competitionBundle});
   const {database}=await import('../scripts/local-store.mjs');
   const {friendlyAction,getFriendlies}=await import(pathToFileURL(bundle).href);
-  const db=database();
+  const {communityRankings}=await import(pathToFileURL(competitionBundle).href);
+  const db=testDb=database();
   const profile=name=>JSON.stringify({displayName:name,teams:[{kind:'football',name:'Arsenal'}],primary:null,platforms:['PC'],timezone:'UTC',psnId:'',eaId:name+'_ea'});
   for(const [id,owner] of [['owner',1],['a',0],['b',0],['c',0]]){
     db.prepare('INSERT INTO accounts(id,email,name,password_hash,owner,created_at) VALUES(?,?,?,?,?,?)').run(id,'',id,'hash',owner,'now');
     db.prepare('INSERT INTO account_usernames(username,account_id,created_at) VALUES(?,?,?)').run(id+'_user',id,'now');
     db.prepare('INSERT INTO account_profiles(account_id,data,updated_at) VALUES(?,?,?)').run(id,profile(id),'now');
   }
-  db.prepare('INSERT INTO tournaments(id,name,owner_id,config,created_at) VALUES(?,?,?,?,?)').run('t','Test','owner','{}','now');
-  for(const id of ['a','b','c'])db.prepare("INSERT INTO members(id,tournament_id,user_id,email,name,role,username) VALUES(?,'t',?,'',?,'manager',?)")
-    .run('m-'+id,id,id,id+'_user');
+  const config={tournamentId:'t',name:'Test',pots:[{id:'p',name:'P'}],managers:[{id:'ma',name:'A'},{id:'mb',name:'B'}],clubs:[{id:'ca',name:'A',pot:'p'},{id:'cb',name:'B',pot:'p'}]};
+  db.prepare('INSERT INTO tournaments(id,name,owner_id,config,created_at) VALUES(?,?,?,?,?)').run('t','Test','owner',JSON.stringify(config),'now');
+  for(const id of ['a','b','c']){
+    db.prepare('INSERT INTO community_players(id,owner_id,name,created_at) VALUES(?,?,?,?)').run('p-'+id,'owner',id,'now');
+    db.prepare('UPDATE account_usernames SET player_id=? WHERE account_id=?').run('p-'+id,id);
+    db.prepare("INSERT INTO members(id,tournament_id,user_id,email,name,role,player_id,username) VALUES(?,'t',?,'',?,'manager',?,?)")
+      .run('m-'+id,id,id,'p-'+id,id+'_user');
+  }
   const actor=id=>({userId:id,displayName:id});
   const local=new Date(Date.now()+3*86400000).toISOString().slice(0,16);
   assert.throws(()=>friendlyAction(actor('a'),{action:'organize',firstId:'a',secondId:'b',local}),/Only the organizer/);
@@ -65,10 +73,28 @@ try{
   assert.ok(getFriendlies(actor('owner')).invitations.some(i=>i.id===otherPlayed));
   friendlyAction(actor('owner'),{action:'cancel',id:otherPlayed,version:1,message:'Entered by mistake'});
   assert.equal(getFriendlies(actor('c')).invitations.find(i=>i.id===otherPlayed).status,'cancelled');
+  assert.throws(()=>friendlyAction(actor('owner'),{action:'log',opponentId:'a',local:playedLocal,myGoals:2,theirGoals:1,myStars:null,theirStars:null}),/linked Elo player/);
+  const legacyId='legacy-admin-log';
+  db.prepare("INSERT INTO friendly_invitations(id,inviter_id,invitee_id,pair_key,status,proposed_at,proposed_local,proposer_timezone,proposed_by,turn_id,created_at,updated_at) VALUES(?,'owner','a','a|owner','accepted',?,?,'UTC','owner',NULL,?,?)")
+    .run(legacyId,new Date(playedLocal+'Z').toISOString(),playedLocal,'now','now');
+  db.prepare("INSERT INTO friendly_events(id,invitation_id,actor_id,actor_name,at,action,reason,proposed_at) VALUES(?,?,?,?,?,?,?,?)")
+    .run('legacy-log',legacyId,'owner','owner',new Date().toISOString(),'logged',null,new Date(playedLocal+'Z').toISOString());
+  db.prepare("INSERT INTO friendly_events(id,invitation_id,actor_id,actor_name,at,action,reason,proposed_at) VALUES(?,?,?,?,?,?,?,?)")
+    .run('legacy-score',legacyId,'owner','owner',new Date().toISOString(),'result',JSON.stringify({inviter:{goals:3,stars:null},invitee:{goals:1,stars:null}}),new Date(playedLocal+'Z').toISOString());
+  assert.match(getFriendlies(actor('owner')).invitations.find(i=>i.id===legacyId).ratingIssue,/no linked player profile/);
+  const beforeRated=communityRankings('owner').find(p=>p.id==='p-b').played;
+  friendlyAction(actor('owner'),{action:'reassign',id:legacyId,version:1,firstId:'b',secondId:'a',reason:'Admin login was used'});
+  const corrected=getFriendlies(actor('owner')).invitations.find(i=>i.id===legacyId);
+  assert.equal(corrected.ratingIssue,null);
+  assert.equal(corrected.elo.state,'counts');
+  assert.equal(corrected.result.mine.goals,3);
+  assert.equal(communityRankings('owner').find(p=>p.id==='p-b').played,beforeRated+1);
+  assert.equal(getFriendlies(actor('b')).invitations.find(i=>i.id===legacyId).status,'accepted');
+  assert.equal(getFriendlies(actor('c')).invitations.some(i=>i.id===legacyId),false);
   assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
-  db.close();
-  console.log('PASS: organizer proposals require both players; owner sees all friendlies and can void played results without changing the audit trail.');
+  console.log('PASS: organizer approval, admin visibility, voiding, linked-player validation and historical Elo correction.');
 }finally{
+  try{testDb?.close();}catch{/* already closed */}
   if(!dir.startsWith(root+path.sep))throw new Error('Test directory escaped the H: project.');
   fs.rmSync(dir,{recursive:true,force:true});
 }
